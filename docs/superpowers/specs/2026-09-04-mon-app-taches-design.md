@@ -129,9 +129,11 @@ de l'état de l'app.
    - Clé publique → codée en dur dans `push.js` (client), utilisée pour
      `PushManager.subscribe()`.
    - Clé privée (+ clé publique) → jamais exposées au client, stockées
-     comme secrets de l'Edge Function :
+     comme secrets de l'Edge Function, avec un secret supplémentaire
+     `CRON_SECRET` (chaîne aléatoire générée à la main) qui protège
+     l'invocation de la fonction au-delà de la clé anon publique :
      ```bash
-     supabase secrets set VAPID_PRIVATE_KEY=... VAPID_PUBLIC_KEY=...
+     supabase secrets set VAPID_PRIVATE_KEY=... VAPID_PUBLIC_KEY=... CRON_SECRET=...
      ```
 2. **Abonnement côté client** : sur clic du bouton "Autoriser les
    notifications" (écran Réglages), `push.js` demande la permission,
@@ -148,35 +150,45 @@ de l'état de l'app.
      $$
      select net.http_post(
        url := 'https://<project-ref>.functions.supabase.co/send-reminders',
-       headers := jsonb_build_object('Authorization', 'Bearer <anon-key>', 'Content-Type', 'application/json')
+       headers := jsonb_build_object(
+         'Authorization', 'Bearer <anon-key>',
+         'Content-Type', 'application/json',
+         'x-cron-secret', '<CRON_SECRET>'
+       )
      );
      $$
    );
    ```
-5. **L'Edge Function** (`supabase/functions/send-reminders/index.ts`) :
-   - Récupère les réglages des utilisateurs avec `notifications_enabled =
-     true` (une requête), et les tâches non terminées avec un
-     `reminder_time` défini (une deuxième requête) — **deux requêtes à
-     plat, pas d'embedding PostgREST** entre `tasks` et `user_settings`
-     (aucune clé étrangère directe entre les deux, seulement une
-     référence commune vers `auth.users` ; l'embedding imbriqué
-     échouerait). La correspondance `user_id → timezone` se fait via une
-     `Map` en mémoire.
-   - `isDueNow(target, timezone, now, windowMinutes = 5)` : compare
-     l'heure cible à l'heure actuelle dans le fuseau de l'utilisateur,
-     avec une tolérance de 5 minutes après l'heure cible (jamais avant) —
-     absorbe un tick de cron manqué sans déclenchement anticipé.
-   - **Rappel matinal** (récurrent chaque jour) : protégé contre les
-     doublons par `last_morning_reminder_sent_date` (n'envoie qu'une fois
-     par jour civil, même si plusieurs ticks de cron tombent dans la
-     fenêtre de tolérance).
-   - **Rappel par tâche** (ponctuel) : après envoi, `reminder_time` est
-     remis à `null` — empêche naturellement les doublons et la
-     récurrence (si un rappel quotidien est voulu, l'utilisateur le
-     redéfinit).
+5. **L'Edge Function** (`supabase/functions/send-reminders/index.ts`),
+   protégée par le header `x-cron-secret` (rejette toute requête qui ne le
+   présente pas) :
+   - Récupère **tous** les `user_settings` en une requête (pas seulement
+     ceux avec `notifications_enabled = true`) pour construire une `Map`
+     `user_id → timezone` en mémoire, utilisée ensuite pour les rappels
+     par tâche — **pas d'embedding PostgREST** entre `tasks` et
+     `user_settings` (aucune clé étrangère directe entre les deux,
+     seulement une référence commune vers `auth.users` ; l'embedding
+     imbriqué échouerait). Un `Set` des utilisateurs avec notifications
+     activées sert à exclure les rappels de tâche pour qui les a
+     désactivées.
+   - `isDueNow(target, timezone, now, windowMinutes = 5)` calcule l'heure
+     locale via `Intl.DateTimeFormat(...).formatToParts()` (contrat
+     garanti par la spec, contrairement à un aller-retour
+     `toLocaleString` → `new Date(string)`), et compare avec une
+     tolérance de 5 minutes après l'heure cible (jamais avant) — absorbe
+     un tick de cron manqué sans déclenchement anticipé.
+   - **Avant** chaque envoi, un *claim* atomique (mise à jour
+     conditionnelle en base, qui échoue silencieusement si déjà
+     réclamée) évite les doublons si deux invocations du cron se
+     chevauchent : `last_morning_reminder_sent_date` (comparé à la date
+     locale de l'utilisateur, pas UTC) pour le rappel matinal, remise à
+     `null` de `reminder_time` pour le rappel de tâche.
    - Envoie via `npm:web-push` (import Deno). Un abonnement qui répond
      410/404 (expiré, app désinstallée) est supprimé de
-     `push_subscriptions`.
+     `push_subscriptions` ; toute autre erreur est loguée
+     (`console.error`, visible dans les logs Supabase) plutôt
+     qu'avalée en silence — pas de file de retry pour rester
+     proportionné à l'usage, mais l'échec reste au moins visible.
 
 ### Limite connue
 
@@ -234,6 +246,11 @@ d'avertissement avant la mise en pause effective.
   par tâche (depuis la carte de la tâche), bouton **"Exporter mes tâches
   (JSON)"** (filet de sécurité — sérialise le cache local en `.json`
   téléchargeable, aucune logique serveur), déconnexion.
+  **La déconnexion désabonne aussi le push** (`PushSubscription.unsubscribe()`
+  + suppression de la ligne `push_subscriptions`) — nécessaire pour éviter
+  qu'un abonnement push, propre au navigateur/appareil plutôt qu'au compte,
+  ne reste associé à l'ancien utilisateur si quelqu'un d'autre se connecte
+  ensuite sur le même appareil partagé.
 - **Connexion/Inscription** : email + mot de passe.
 - **Historique** : tâches terminées avant aujourd'hui, lecture seule.
 
