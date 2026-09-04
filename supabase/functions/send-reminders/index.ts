@@ -18,6 +18,25 @@ webpush.setVapidDetails(
 
 const WINDOW_MINUTES = 5;
 
+// Extrait heure/minute/date locales via Intl.formatToParts — contrat garanti
+// par la spec ECMAScript, contrairement à un aller-retour toLocaleString/Date.
+function localParts(timezone: string, now: Date): { dateKey: string; minutesOfDay: number } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const get = (type: string) => parts.find((p) => p.type === type)!.value;
+  return {
+    dateKey: `${get("year")}-${get("month")}-${get("day")}`,
+    minutesOfDay: Number(get("hour")) * 60 + Number(get("minute")),
+  };
+}
+
 function isDueNow(
   target: string | null,
   timezone: string,
@@ -25,21 +44,25 @@ function isDueNow(
   windowMinutes = WINDOW_MINUTES,
 ): boolean {
   if (!target) return false;
-  const localNow = new Date(now.toLocaleString("en-US", { timeZone: timezone }));
-  const [h, m] = target.split(":").map(Number);
-  const targetToday = new Date(localNow);
-  targetToday.setHours(h, m, 0, 0);
-  const diffMinutes = (localNow.getTime() - targetToday.getTime()) / 60000;
-  return diffMinutes >= 0 && diffMinutes < windowMinutes;
+  const [th, tm] = target.split(":").map(Number);
+  const { minutesOfDay } = localParts(timezone, now);
+  const diff = minutesOfDay - (th * 60 + tm);
+  return diff >= 0 && diff < windowMinutes;
 }
 
-async function sendPushToUser(userId: string, payload: Record<string, string>) {
+// Envoie à tous les appareils de l'utilisateur. Retourne false si au moins un
+// envoi a échoué pour une raison inattendue (autre qu'abonnement expiré), pour
+// que l'appelant puisse au moins logger l'échec au lieu de l'avaler en silence.
+async function sendPushToUser(userId: string, payload: Record<string, string>): Promise<boolean> {
   const { data: subs } = await supabase
     .from("push_subscriptions")
     .select("*")
     .eq("user_id", userId);
 
-  for (const sub of subs ?? []) {
+  if (!subs || subs.length === 0) return true; // rien à envoyer, pas un échec
+
+  let allOk = true;
+  for (const sub of subs) {
     try {
       await webpush.sendNotification(
         { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth_key } },
@@ -50,42 +73,66 @@ async function sendPushToUser(userId: string, payload: Record<string, string>) {
       if (statusCode === 410 || statusCode === 404) {
         // Abonnement expiré ou app désinstallée sur cet appareil.
         await supabase.from("push_subscriptions").delete().eq("id", sub.id);
+      } else {
+        allOk = false;
+        console.error(`push failed for user ${userId}, subscription ${sub.id}:`, err);
       }
     }
   }
+  return allOk;
 }
 
-Deno.serve(async () => {
-  const now = new Date();
-  const today = now.toISOString().slice(0, 10); // "YYYY-MM-DD"
+Deno.serve(async (req) => {
+  // Protège l'invocation au-delà de la clé anon (publique, visible dans le
+  // bundle client) : seul l'appel pg_cron connaît ce secret.
+  const cronSecret = Deno.env.get("CRON_SECRET");
+  if (cronSecret && req.headers.get("x-cron-secret") !== cronSecret) {
+    return new Response("unauthorized", { status: 401 });
+  }
 
-  // Rappels matinaux (récurrents, un par jour civil par utilisateur).
+  const now = new Date();
+
+  // Une seule lecture de tous les réglages : sert à la fois pour les rappels
+  // matinaux et comme table de correspondance user_id -> fuseau/activation
+  // pour les rappels par tâche (pas d'embedding PostgREST possible, cf. spec).
   const { data: settings } = await supabase
     .from("user_settings")
-    .select("user_id, morning_reminder_time, timezone, last_morning_reminder_sent_date")
-    .eq("notifications_enabled", true);
+    .select("user_id, morning_reminder_time, notifications_enabled, timezone, last_morning_reminder_sent_date");
 
   const tzByUser = new Map<string, string>();
-
+  const enabledUsers = new Set<string>();
   for (const s of settings ?? []) {
     tzByUser.set(s.user_id, s.timezone);
+    if (s.notifications_enabled) enabledUsers.add(s.user_id);
+  }
 
-    if (s.last_morning_reminder_sent_date === today) continue;
+  // Rappels matinaux (récurrents, une fois par jour civil LOCAL par utilisateur).
+  for (const s of settings ?? []) {
+    if (!s.notifications_enabled) continue;
     if (!isDueNow(s.morning_reminder_time, s.timezone, now)) continue;
 
-    await sendPushToUser(s.user_id, {
+    const { dateKey: localToday } = localParts(s.timezone, now);
+
+    // Claim atomique avant envoi : n'envoie que si pas déjà marqué pour ce
+    // jour local, et évite le double-envoi si deux invocations du cron se
+    // chevauchent.
+    const { data: claimed } = await supabase
+      .from("user_settings")
+      .update({ last_morning_reminder_sent_date: localToday })
+      .eq("user_id", s.user_id)
+      .or(`last_morning_reminder_sent_date.is.null,last_morning_reminder_sent_date.neq.${localToday}`)
+      .select("user_id");
+    if (!claimed || claimed.length === 0) continue;
+
+    const ok = await sendPushToUser(s.user_id, {
       title: "Tes priorités du jour",
       body: "Ouvre l'app pour voir tes tâches urgentes et importantes.",
     });
-    await supabase
-      .from("user_settings")
-      .update({ last_morning_reminder_sent_date: today })
-      .eq("user_id", s.user_id);
+    if (!ok) console.error(`morning reminder push failed for user ${s.user_id}`);
   }
 
-  // Rappels par tâche (ponctuels). Pas d'embedding PostgREST vers
-  // user_settings : aucune clé étrangère directe entre les deux tables,
-  // donc jointure faite en mémoire via tzByUser construit ci-dessus.
+  // Rappels par tâche (ponctuels), uniquement pour les utilisateurs ayant
+  // activé les notifications.
   const { data: tasks } = await supabase
     .from("tasks")
     .select("id, user_id, text, reminder_time")
@@ -93,11 +140,22 @@ Deno.serve(async () => {
     .not("reminder_time", "is", null);
 
   for (const t of tasks ?? []) {
+    if (!enabledUsers.has(t.user_id)) continue;
     const timezone = tzByUser.get(t.user_id) ?? "Europe/Paris";
     if (!isDueNow(t.reminder_time, timezone, now)) continue;
 
-    await sendPushToUser(t.user_id, { title: "Rappel", body: t.text });
-    await supabase.from("tasks").update({ reminder_time: null }).eq("id", t.id);
+    // Claim atomique : ne remet à null (et donc n'envoie) que si la valeur
+    // n'a pas déjà été réclamée par une autre invocation en chevauchement.
+    const { data: claimed } = await supabase
+      .from("tasks")
+      .update({ reminder_time: null })
+      .eq("id", t.id)
+      .eq("reminder_time", t.reminder_time)
+      .select("id");
+    if (!claimed || claimed.length === 0) continue;
+
+    const ok = await sendPushToUser(t.user_id, { title: "Rappel", body: t.text });
+    if (!ok) console.error(`task reminder push failed for task ${t.id}`);
   }
 
   return new Response("ok");
