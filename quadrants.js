@@ -10,6 +10,10 @@ export function getUnsorted(tasks) {
   return tasks.filter((t) => t.urgent === null || t.important === null);
 }
 
+export function getSorted(tasks) {
+  return tasks.filter((t) => t.urgent !== null && t.important !== null);
+}
+
 export function splitActiveAndArchived(tasks, todayDateString) {
   const active = [];
   const archived = [];

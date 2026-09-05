@@ -3,7 +3,9 @@ import { supabase } from "./supabaseClient.js";
 export async function createTasksFromLines(rawText) {
   const lines = rawText.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
   if (lines.length === 0) return [];
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  if (!user) throw new Error("Session expirée, reconnecte-toi.");
   const rows = lines.map((text) => ({ user_id: user.id, text }));
   const { data, error } = await supabase.from("tasks").insert(rows).select();
   if (error) throw error;

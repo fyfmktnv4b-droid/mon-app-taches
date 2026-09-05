@@ -1,6 +1,6 @@
-import { signUp, signIn, signOut, getSession, onAuthStateChange } from "./supabaseClient.js";
+import { signUp, signIn, signOut, onAuthStateChange } from "./supabaseClient.js";
 import { createTasksFromLines, listTasks, setTag, setDone, deleteTask } from "./tasks.js";
-import { getQuadrant, getPriorityTasks, getUnsorted, splitActiveAndArchived } from "./quadrants.js";
+import { getQuadrant, getPriorityTasks, getUnsorted, getSorted, splitActiveAndArchived } from "./quadrants.js";
 import { tasksToExportJson } from "./export.js";
 
 const authSection = document.getElementById("auth");
@@ -11,22 +11,45 @@ const emailInput = document.getElementById("auth-email");
 const passwordInput = document.getElementById("auth-password");
 const signUpButton = document.getElementById("auth-signup");
 const signOutButton = document.getElementById("sign-out");
+const exportButton = document.getElementById("export-json");
+const appError = document.getElementById("app-error");
 const mainView = document.getElementById("main-view");
 const navMain = document.getElementById("nav-main");
 const navHistory = document.getElementById("nav-history");
-const exportButton = document.getElementById("export-json");
 
 let currentView = "main";
+let wasSignedIn = null; // sentinel: forces the first auth event through
 
 function showApp() {
   authSection.hidden = true;
   appSection.hidden = false;
+  mainView.innerHTML = "";
   render();
 }
 
 function showAuth() {
   authSection.hidden = false;
   appSection.hidden = true;
+  mainView.innerHTML = "";
+}
+
+function showAppError(err) {
+  console.error(err);
+  appError.textContent = (err && err.message) ? err.message : "Une erreur est survenue.";
+}
+
+function clearAppError() {
+  appError.textContent = "";
+}
+
+async function safely(fn) {
+  try {
+    await fn();
+  } catch (err) {
+    showAppError(err);
+    return;
+  }
+  render();
 }
 
 function todayDateString() {
@@ -51,6 +74,16 @@ function taskRowHtml(task) {
   `;
 }
 
+function historyRowHtml(task) {
+  const date = task.completed_at ? task.completed_at.slice(0, 10) : "";
+  return `
+    <div class="task-row">
+      <span class="task-text">${escapeHtml(task.text)}</span>
+      <span class="task-date">${date}</span>
+    </div>
+  `;
+}
+
 function quadrantHtml(title, tasks, extraClass = "") {
   return `
     <div class="quadrant ${extraClass}">
@@ -61,25 +94,21 @@ function quadrantHtml(title, tasks, extraClass = "") {
 }
 
 function wireTaskRows(container) {
-  container.querySelectorAll(".task-row").forEach((row) => {
+  container.querySelectorAll(".task-row[data-id]").forEach((row) => {
     const id = row.dataset.id;
-    row.querySelector(".task-done").addEventListener("change", async (event) => {
-      await setDone(id, event.target.checked);
-      render();
+    row.querySelector(".task-done").addEventListener("change", (event) => {
+      safely(() => setDone(id, event.target.checked));
     });
-    row.querySelector(".task-urgent").addEventListener("click", async () => {
+    row.querySelector(".task-urgent").addEventListener("click", () => {
       const active = row.querySelector(".task-urgent").dataset.active === "true";
-      await setTag(id, "urgent", !active);
-      render();
+      safely(() => setTag(id, "urgent", !active));
     });
-    row.querySelector(".task-important").addEventListener("click", async () => {
+    row.querySelector(".task-important").addEventListener("click", () => {
       const active = row.querySelector(".task-important").dataset.active === "true";
-      await setTag(id, "important", !active);
-      render();
+      safely(() => setTag(id, "important", !active));
     });
-    row.querySelector(".task-delete").addEventListener("click", async () => {
-      await deleteTask(id);
-      render();
+    row.querySelector(".task-delete").addEventListener("click", () => {
+      safely(() => deleteTask(id));
     });
   });
 }
@@ -88,7 +117,7 @@ async function renderMainView() {
   const allTasks = await listTasks();
   const { active } = splitActiveAndArchived(allTasks, todayDateString());
   const unsorted = getUnsorted(active);
-  const sorted = active.filter((t) => t.urgent !== null && t.important !== null);
+  const sorted = getSorted(active);
   const priority = getPriorityTasks(sorted);
   const q2 = getQuadrant(sorted, false, true);
   const q3 = getQuadrant(sorted, true, false);
@@ -115,12 +144,10 @@ async function renderMainView() {
     </div>
   `;
 
-  document.getElementById("capture-form").addEventListener("submit", async (event) => {
+  document.getElementById("capture-form").addEventListener("submit", (event) => {
     event.preventDefault();
     const input = document.getElementById("capture-input");
-    await createTasksFromLines(input.value);
-    input.value = "";
-    render();
+    safely(() => createTasksFromLines(input.value));
   });
 
   wireTaskRows(mainView);
@@ -133,14 +160,19 @@ async function renderHistoryView() {
 
   mainView.innerHTML = `
     <h2>Historique</h2>
-    <div id="history-list">${archived.map(taskRowHtml).join("") || '<p class="empty">Aucune tâche archivée</p>'}</div>
+    <div id="history-list">${archived.map(historyRowHtml).join("") || '<p class="empty">Aucune tâche archivée</p>'}</div>
   `;
-  wireTaskRows(mainView);
+  // Read-only per spec — no wireTaskRows here.
 }
 
-function render() {
-  if (currentView === "main") renderMainView();
-  else renderHistoryView();
+async function render() {
+  try {
+    if (currentView === "main") await renderMainView();
+    else await renderHistoryView();
+    clearAppError();
+  } catch (err) {
+    showAppError(err);
+  }
 }
 
 navMain.addEventListener("click", () => {
@@ -176,26 +208,32 @@ signUpButton.addEventListener("click", async () => {
   }
 });
 
-signOutButton.addEventListener("click", () => signOut());
+signOutButton.addEventListener("click", async () => {
+  try {
+    await signOut();
+  } catch (err) {
+    showAppError(err);
+  }
+});
 
-exportButton.addEventListener("click", async () => {
-  const tasks = await listTasks();
-  const json = tasksToExportJson(tasks);
-  const blob = new Blob([json], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `mes-taches-${todayDateString()}.json`;
-  link.click();
-  URL.revokeObjectURL(url);
+exportButton.addEventListener("click", () => {
+  safely(async () => {
+    const tasks = await listTasks();
+    const json = tasksToExportJson(tasks);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `mes-taches-${todayDateString()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  });
 });
 
 onAuthStateChange((session) => {
-  if (session) showApp();
-  else showAuth();
-});
-
-getSession().then((session) => {
-  if (session) showApp();
+  const nowSignedIn = !!session;
+  if (nowSignedIn === wasSignedIn) return;
+  wasSignedIn = nowSignedIn;
+  if (nowSignedIn) showApp();
   else showAuth();
 });
