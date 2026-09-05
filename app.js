@@ -102,7 +102,7 @@ async function renderMainView() {
     <div id="unsorted-list">${unsorted.map(taskRowHtml).join("") || '<p class="empty">Rien à trier</p>'}</div>
 
     <h2>★ Priorités du jour</h2>
-    <div id="priority-list">${priority.map(taskRowHtml).join("") || '<p class="empty">Aucune priorité pour l'instant</p>'}</div>
+    <div id="priority-list">${priority.map(taskRowHtml).join("") || '<p class="empty">Aucune priorité pour l’instant</p>'}</div>
 
     <h2>Matrice complète</h2>
     <div class="matrix">
