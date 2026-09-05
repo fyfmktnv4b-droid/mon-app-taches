@@ -10,3 +10,7 @@ header {
 }
 #main-view { padding: 16px; max-width: 640px; margin: 0 auto; }
 #auth-error { color: #dc2626; font-size: 13px; }
+#capture-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+.task-row { display: flex; align-items: center; gap: 8px; padding: 8px; background: #fff; border-radius: 8px; margin-bottom: 6px; }
+.task-text { flex: 1; }
+.task-urgent[data-active="true"], .task-important[data-active="true"] { background: #1a1a1a; color: #fff; }
