@@ -14,3 +14,11 @@ header {
 .task-row { display: flex; align-items: center; gap: 8px; padding: 8px; background: #fff; border-radius: 8px; margin-bottom: 6px; }
 .task-text { flex: 1; }
 .task-urgent[data-active="true"], .task-important[data-active="true"] { background: #1a1a1a; color: #fff; }
+nav button[data-active="true"] { background: #1a1a1a; color: #fff; }
+.matrix { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.quadrant { background: #fff; border: 1px solid #e2e2e5; border-radius: 10px; padding: 12px; }
+.quadrant.q1 { border-color: #22c55e; border-width: 2px; }
+.quadrant-title { font-weight: 600; font-size: 13px; margin-bottom: 8px; }
+.empty { color: #9ca3af; font-size: 13px; }
+#priority-list { background: #1f2937; border-radius: 10px; padding: 12px; }
+#priority-list .task-row { background: rgba(255,255,255,0.08); color: #fff; }
