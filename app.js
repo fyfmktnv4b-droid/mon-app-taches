@@ -22,11 +22,17 @@ function showAuth() {
   appSection.hidden = true;
 }
 
+function escapeHtml(str) {
+  return str.replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[c]);
+}
+
 function taskRowHtml(task) {
   return `
     <div class="task-row" data-id="${task.id}">
       <input type="checkbox" class="task-done" ${task.done ? "checked" : ""}>
-      <span class="task-text">${task.text}</span>
+      <span class="task-text">${escapeHtml(task.text)}</span>
       <button class="task-urgent" data-active="${task.urgent === true}">Urgent</button>
       <button class="task-important" data-active="${task.important === true}">Important</button>
       <button class="task-delete">×</button>
