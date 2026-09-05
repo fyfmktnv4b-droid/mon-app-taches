@@ -4,6 +4,7 @@ import {
   getQuadrant,
   getPriorityTasks,
   getUnsorted,
+  getSorted,
   splitActiveAndArchived,
 } from "./quadrants.js";
 
@@ -52,6 +53,20 @@ test("getUnsorted returns tasks missing either tag", () => {
     makeTask({ id: "c", urgent: true, important: true }),
   ];
   assert.deepEqual(getUnsorted(tasks).map((t) => t.id), ["a", "b"]);
+});
+
+test("getSorted and getUnsorted partition the task list with no overlap", () => {
+  const tasks = [
+    makeTask({ id: "a", urgent: null, important: null }),
+    makeTask({ id: "b", urgent: true, important: null }),
+    makeTask({ id: "c", urgent: true, important: true }),
+    makeTask({ id: "d", urgent: false, important: false }),
+  ];
+  const sorted = getSorted(tasks);
+  const unsorted = getUnsorted(tasks);
+  assert.deepEqual(sorted.map((t) => t.id), ["c", "d"]);
+  assert.deepEqual(unsorted.map((t) => t.id), ["a", "b"]);
+  assert.equal(sorted.length + unsorted.length, tasks.length);
 });
 
 test("splitActiveAndArchived archives only tasks done before today", () => {

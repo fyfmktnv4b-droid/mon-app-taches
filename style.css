@@ -22,3 +22,4 @@ nav button[data-active="true"] { background: #1a1a1a; color: #fff; }
 .empty { color: #9ca3af; font-size: 13px; }
 #priority-list { background: #1f2937; border-radius: 10px; padding: 12px; }
 #priority-list .task-row { background: rgba(255,255,255,0.08); color: #fff; }
+#app-error { color: #dc2626; font-size: 13px; padding: 0 16px; max-width: 640px; margin: 0 auto; }
