@@ -1,6 +1,7 @@
 import { signUp, signIn, signOut, getSession, onAuthStateChange } from "./supabaseClient.js";
 import { createTasksFromLines, listTasks, setTag, setDone, deleteTask } from "./tasks.js";
 import { getQuadrant, getPriorityTasks, getUnsorted, splitActiveAndArchived } from "./quadrants.js";
+import { tasksToExportJson } from "./export.js";
 
 const authSection = document.getElementById("auth");
 const appSection = document.getElementById("app");
@@ -13,6 +14,7 @@ const signOutButton = document.getElementById("sign-out");
 const mainView = document.getElementById("main-view");
 const navMain = document.getElementById("nav-main");
 const navHistory = document.getElementById("nav-history");
+const exportButton = document.getElementById("export-json");
 
 let currentView = "main";
 
@@ -175,6 +177,18 @@ signUpButton.addEventListener("click", async () => {
 });
 
 signOutButton.addEventListener("click", () => signOut());
+
+exportButton.addEventListener("click", async () => {
+  const tasks = await listTasks();
+  const json = tasksToExportJson(tasks);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `mes-taches-${todayDateString()}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+});
 
 onAuthStateChange((session) => {
   if (session) showApp();
