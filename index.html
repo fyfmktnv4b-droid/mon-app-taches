@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mes Tâches</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <section id="auth">
+    <h1>Mes Tâches</h1>
+    <form id="auth-form">
+      <input type="email" id="auth-email" placeholder="Email" required>
+      <input type="password" id="auth-password" placeholder="Mot de passe" required>
+      <button type="submit" id="auth-signin">Se connecter</button>
+      <button type="button" id="auth-signup">Créer un compte</button>
+    </form>
+    <p id="auth-error"></p>
+  </section>
+
+  <section id="app" hidden>
+    <header>
+      <h1>Mes Tâches</h1>
+      <button id="sign-out">Déconnexion</button>
+    </header>
+    <main id="main-view"></main>
+  </section>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
