@@ -1,5 +1,6 @@
 import { signUp, signIn, signOut, onAuthStateChange } from "./supabaseClient.js";
 import { loadTasks, captureTasks, updateTag, updateDone, removeTask, flushQueue, initSync } from "./sync.js";
+import { clearLocalData } from "./storage.js";
 import { getQuadrant, getPriorityTasks, getUnsorted, getSorted, splitActiveAndArchived } from "./quadrants.js";
 import { tasksToExportJson } from "./export.js";
 
@@ -24,7 +25,7 @@ const navMain = document.getElementById("nav-main");
 const navHistory = document.getElementById("nav-history");
 
 let currentView = "main";
-let wasSignedIn = null;
+let wasSignedIn = null; // sentinel: forces the first auth event through
 
 async function showApp() {
   authSection.hidden = true;
@@ -173,6 +174,7 @@ async function renderHistoryView() {
     <h2>Historique</h2>
     <div id="history-list">${archived.map(historyRowHtml).join("") || '<p class="empty">Aucune tâche archivée</p>'}</div>
   `;
+  // Read-only per spec — no wireTaskRows here.
 }
 
 async function render() {
@@ -243,9 +245,23 @@ exportButton.addEventListener("click", () => {
 onAuthStateChange((session) => {
   const nowSignedIn = !!session;
   if (nowSignedIn === wasSignedIn) return;
+  // Only a true signed-in -> signed-out transition is a sign-out. The `null`
+  // sentinel also lets a signed-out cold boot through, and that must NOT clear:
+  // an expired session offline would otherwise wipe the cache and the unsynced queue.
+  const isSignOut = wasSignedIn === true && !nowSignedIn;
   wasSignedIn = nowSignedIn;
-  if (nowSignedIn) showApp();
-  else showAuth();
+  if (nowSignedIn) {
+    showApp();
+  } else {
+    // Best-effort: a clear failure must not block getting back to the auth screen.
+    if (isSignOut) clearLocalData().catch((err) => console.error(err));
+    showAuth();
+  }
 });
 
-initSync(render);
+initSync(() => {
+  // Signed out, the RLS-filtered read returns [] rather than an error, which
+  // would be cached as "no tasks" and wipe the offline cache. Only re-render
+  // while the signed-in app view is actually showing.
+  if (!appSection.hidden) render();
+});

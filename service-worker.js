@@ -2,7 +2,7 @@
 // file listed in ASSETS below. This is what makes the browser notice a
 // new service worker and refresh its cache — there's no build tool here
 // to hash files automatically, so this is a manual, required step.
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const CACHE_NAME = `mon-app-taches-${CACHE_VERSION}`;
 
 const ASSETS = [
@@ -20,6 +20,17 @@ const ASSETS = [
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
+  // Vendored Supabase JS module graph — every file must be listed, since a
+  // missing one breaks the import chain on a cold offline boot.
+  "./vendor/supabase-js.esm.js",
+  "./vendor/supabase-auth-js-2.115.0.js",
+  "./vendor/supabase-functions-js-2.115.0.js",
+  "./vendor/supabase-postgrest-js-2.115.0.js",
+  "./vendor/supabase-realtime-js-2.115.0.js",
+  "./vendor/supabase-storage-js-2.115.0.js",
+  "./vendor/supabase-phoenix-0.4.5.js",
+  "./vendor/iceberg-js-0.8.1.js",
+  "./vendor/tslib-2.8.1.js",
 ];
 
 self.addEventListener("install", (event) => {

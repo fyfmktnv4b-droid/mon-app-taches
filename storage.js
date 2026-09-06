@@ -59,6 +59,20 @@ export async function enqueueMutation(mutation) {
   return requestToPromise(tx.objectStore(QUEUE_STORE).add(mutation));
 }
 
+// Called on sign-out: the cache and queue are global, so without this a next
+// user on a shared device would see the previous user's tasks and have their
+// leftover queued mutations replayed against the new account.
+export async function clearLocalData() {
+  const db = await openDb();
+  const tx = db.transaction([TASKS_STORE, QUEUE_STORE], "readwrite");
+  tx.objectStore(TASKS_STORE).clear();
+  tx.objectStore(QUEUE_STORE).clear();
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 export async function removeMutation(queueId) {
   const db = await openDb();
   const tx = db.transaction(QUEUE_STORE, "readwrite");
