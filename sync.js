@@ -6,12 +6,16 @@ import { applyMutation, resolveMutationIds, buildOptimisticTasks } from "./syncL
 export async function loadTasks() {
   try {
     const tasks = await listTasks();
+    // Overlay still-unsynced mutations, so a fresh server read can't visibly
+    // revert an optimistic offline edit that hasn't been flushed yet.
+    const pending = await getPendingMutations();
+    const merged = pending.reduce((acc, mutation) => applyMutation(acc, mutation), tasks);
     try {
-      await setCachedTasks(tasks);
+      await setCachedTasks(merged);
     } catch (_cacheErr) {
       // Caching is best-effort — the freshly fetched data is still valid to show.
     }
-    return tasks;
+    return merged;
   } catch (_networkErr) {
     return getCachedTasks();
   }
@@ -75,7 +79,20 @@ export async function removeTask(id) {
   }
 }
 
-export async function flushQueue() {
+let flushInFlight = null;
+
+// Three callers can trigger a flush (sign-in, `online`, `focus`). Without this
+// guard two overlapping runs read the same not-yet-removed queue entry and
+// replay it twice, duplicating server-side writes. Concurrent callers share
+// the one in-progress flush instead of starting a second.
+export function flushQueue() {
+  if (!flushInFlight) {
+    flushInFlight = doFlush().finally(() => { flushInFlight = null; });
+  }
+  return flushInFlight;
+}
+
+async function doFlush() {
   const idMap = new Map();
   const queue = await getPendingMutations();
   for (const mutation of queue) {
