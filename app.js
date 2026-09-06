@@ -1,7 +1,13 @@
 import { signUp, signIn, signOut, onAuthStateChange } from "./supabaseClient.js";
-import { createTasksFromLines, listTasks, setTag, setDone, deleteTask } from "./tasks.js";
+import { loadTasks, captureTasks, updateTag, updateDone, removeTask, flushQueue, initSync } from "./sync.js";
 import { getQuadrant, getPriorityTasks, getUnsorted, getSorted, splitActiveAndArchived } from "./quadrants.js";
 import { tasksToExportJson } from "./export.js";
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./service-worker.js");
+  });
+}
 
 const authSection = document.getElementById("auth");
 const appSection = document.getElementById("app");
@@ -18,12 +24,17 @@ const navMain = document.getElementById("nav-main");
 const navHistory = document.getElementById("nav-history");
 
 let currentView = "main";
-let wasSignedIn = null; // sentinel: forces the first auth event through
+let wasSignedIn = null;
 
-function showApp() {
+async function showApp() {
   authSection.hidden = true;
   appSection.hidden = false;
   mainView.innerHTML = "";
+  try {
+    await flushQueue();
+  } catch (_err) {
+    // Still offline (or a real error) — render() falls back to cache as needed.
+  }
   render();
 }
 
@@ -97,24 +108,24 @@ function wireTaskRows(container) {
   container.querySelectorAll(".task-row[data-id]").forEach((row) => {
     const id = row.dataset.id;
     row.querySelector(".task-done").addEventListener("change", (event) => {
-      safely(() => setDone(id, event.target.checked));
+      safely(() => updateDone(id, event.target.checked));
     });
     row.querySelector(".task-urgent").addEventListener("click", () => {
       const active = row.querySelector(".task-urgent").dataset.active === "true";
-      safely(() => setTag(id, "urgent", !active));
+      safely(() => updateTag(id, "urgent", !active));
     });
     row.querySelector(".task-important").addEventListener("click", () => {
       const active = row.querySelector(".task-important").dataset.active === "true";
-      safely(() => setTag(id, "important", !active));
+      safely(() => updateTag(id, "important", !active));
     });
     row.querySelector(".task-delete").addEventListener("click", () => {
-      safely(() => deleteTask(id));
+      safely(() => removeTask(id));
     });
   });
 }
 
 async function renderMainView() {
-  const allTasks = await listTasks();
+  const allTasks = await loadTasks();
   const { active } = splitActiveAndArchived(allTasks, todayDateString());
   const unsorted = getUnsorted(active);
   const sorted = getSorted(active);
@@ -147,14 +158,14 @@ async function renderMainView() {
   document.getElementById("capture-form").addEventListener("submit", (event) => {
     event.preventDefault();
     const input = document.getElementById("capture-input");
-    safely(() => createTasksFromLines(input.value));
+    safely(() => captureTasks(input.value));
   });
 
   wireTaskRows(mainView);
 }
 
 async function renderHistoryView() {
-  const allTasks = await listTasks();
+  const allTasks = await loadTasks();
   const { archived } = splitActiveAndArchived(allTasks, todayDateString());
   archived.sort((a, b) => (b.completed_at ?? "").localeCompare(a.completed_at ?? ""));
 
@@ -162,7 +173,6 @@ async function renderHistoryView() {
     <h2>Historique</h2>
     <div id="history-list">${archived.map(historyRowHtml).join("") || '<p class="empty">Aucune tâche archivée</p>'}</div>
   `;
-  // Read-only per spec — no wireTaskRows here.
 }
 
 async function render() {
@@ -218,7 +228,7 @@ signOutButton.addEventListener("click", async () => {
 
 exportButton.addEventListener("click", () => {
   safely(async () => {
-    const tasks = await listTasks();
+    const tasks = await loadTasks();
     const json = tasksToExportJson(tasks);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -237,3 +247,5 @@ onAuthStateChange((session) => {
   if (nowSignedIn) showApp();
   else showAuth();
 });
+
+initSync(render);
