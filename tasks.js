@@ -26,10 +26,10 @@ export async function setTag(id, tagName, value) {
   if (error) throw error;
 }
 
-export async function setDone(id, done) {
+export async function setDone(id, done, completedAt = done ? new Date().toISOString() : null) {
   const { error } = await supabase
     .from("tasks")
-    .update({ done, completed_at: done ? new Date().toISOString() : null })
+    .update({ done, completed_at: completedAt })
     .eq("id", id);
   if (error) throw error;
 }
