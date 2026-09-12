@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="style.css">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <meta name="theme-color" content="#1a1a1a">
+  <meta name="theme-color" content="#8FA37E">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
 </head>
@@ -21,6 +21,17 @@
       <button type="button" id="auth-signup">Créer un compte</button>
     </form>
     <p id="auth-error"></p>
+  </section>
+
+  <section id="welcome" hidden>
+    <p id="welcome-day"></p>
+    <blockquote id="welcome-quote"></blockquote>
+    <p id="welcome-verse"></p>
+    <div id="welcome-scene-wrap">
+      <img id="welcome-scene" alt="">
+      <div id="welcome-scene-fallback" class="scene-fallback" hidden></div>
+    </div>
+    <button id="welcome-continue">Commencer</button>
   </section>
 
   <section id="app" hidden>

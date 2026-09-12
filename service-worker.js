@@ -2,7 +2,7 @@
 // file listed in ASSETS below. This is what makes the browser notice a
 // new service worker and refresh its cache — there's no build tool here
 // to hash files automatically, so this is a manual, required step.
-const CACHE_VERSION = "v5";
+const CACHE_VERSION = "v6";
 const CACHE_NAME = `mon-app-taches-${CACHE_VERSION}`;
 
 const ASSETS = [
@@ -33,6 +33,12 @@ const ASSETS = [
   "./vendor/tslib-2.8.1.js",
   "./push.js",
   "./settings.js",
+  "./quotes.js",
+  "./dayScenes.js",
+  // NOTE: illustrations/*.png are intentionally NOT listed here — they
+  // don't exist yet. cache.addAll() fails the whole install if any one
+  // asset 404s, so add each file to this list (and bump CACHE_VERSION
+  // again) only once the real PNGs are dropped into illustrations/.
 ];
 
 self.addEventListener("install", (event) => {
