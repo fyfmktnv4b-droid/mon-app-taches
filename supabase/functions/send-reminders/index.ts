@@ -4,6 +4,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3";
+import { localParts, isDueNow } from "./reminderLogic.js";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -15,40 +16,6 @@ webpush.setVapidDetails(
   Deno.env.get("VAPID_PUBLIC_KEY")!,
   Deno.env.get("VAPID_PRIVATE_KEY")!,
 );
-
-const WINDOW_MINUTES = 5;
-
-// Extrait heure/minute/date locales via Intl.formatToParts — contrat garanti
-// par la spec ECMAScript, contrairement à un aller-retour toLocaleString/Date.
-function localParts(timezone: string, now: Date): { dateKey: string; minutesOfDay: number } {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(now);
-  const get = (type: string) => parts.find((p) => p.type === type)!.value;
-  return {
-    dateKey: `${get("year")}-${get("month")}-${get("day")}`,
-    minutesOfDay: Number(get("hour")) * 60 + Number(get("minute")),
-  };
-}
-
-function isDueNow(
-  target: string | null,
-  timezone: string,
-  now: Date,
-  windowMinutes = WINDOW_MINUTES,
-): boolean {
-  if (!target) return false;
-  const [th, tm] = target.split(":").map(Number);
-  const { minutesOfDay } = localParts(timezone, now);
-  const diff = minutesOfDay - (th * 60 + tm);
-  return diff >= 0 && diff < windowMinutes;
-}
 
 // Envoie à tous les appareils de l'utilisateur. Retourne false si au moins un
 // envoi a échoué pour une raison inattendue (autre qu'abonnement expiré), pour
