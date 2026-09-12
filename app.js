@@ -5,6 +5,8 @@ import { getQuadrant, getPriorityTasks, getUnsorted, getSorted, splitActiveAndAr
 import { tasksToExportJson } from "./export.js";
 import { getSettings, setMorningReminderTime, setNotificationsEnabled } from "./settings.js";
 import { subscribeToPush, unsubscribeFromPush, hasPushSubscription } from "./push.js";
+import { pickQuoteForDate } from "./quotes.js";
+import { sceneForDay } from "./dayScenes.js";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -13,6 +15,12 @@ if ("serviceWorker" in navigator) {
 }
 
 const authSection = document.getElementById("auth");
+const welcomeSection = document.getElementById("welcome");
+const welcomeDay = document.getElementById("welcome-day");
+const welcomeQuote = document.getElementById("welcome-quote");
+const welcomeVerse = document.getElementById("welcome-verse");
+const welcomeScene = document.getElementById("welcome-scene");
+const welcomeSceneFallback = document.getElementById("welcome-scene-fallback");
 const appSection = document.getElementById("app");
 const authForm = document.getElementById("auth-form");
 const authError = document.getElementById("auth-error");
@@ -30,7 +38,31 @@ const navSettings = document.getElementById("nav-settings");
 let currentView = "main";
 let wasSignedIn = null; // sentinel: forces the first auth event through
 
-async function showApp() {
+function showWelcome() {
+  authSection.hidden = true;
+  appSection.hidden = true;
+  welcomeSection.hidden = false;
+
+  const now = new Date();
+  const scene = sceneForDay(now);
+  const { quote, author, verse, reference } = pickQuoteForDate(now);
+
+  welcomeDay.textContent = scene.label;
+  welcomeQuote.textContent = `« ${quote} » — ${author}`;
+  welcomeVerse.textContent = `${verse} (${reference})`;
+  welcomeScene.alt = scene.alt;
+  welcomeScene.hidden = false;
+  welcomeSceneFallback.hidden = true;
+  welcomeScene.onerror = () => {
+    welcomeScene.hidden = true;
+    welcomeSceneFallback.hidden = false;
+    welcomeSceneFallback.textContent = scene.label;
+  };
+  welcomeScene.src = scene.file;
+}
+
+async function enterApp() {
+  welcomeSection.hidden = true;
   authSection.hidden = true;
   appSection.hidden = false;
   mainView.innerHTML = "";
@@ -43,8 +75,9 @@ async function showApp() {
 }
 
 function showAuth() {
-  authSection.hidden = false;
+  welcomeSection.hidden = true;
   appSection.hidden = true;
+  authSection.hidden = false;
   mainView.innerHTML = "";
 }
 
@@ -244,6 +277,8 @@ async function render() {
   }
 }
 
+welcomeSection.addEventListener("click", enterApp);
+
 navMain.addEventListener("click", () => {
   currentView = "main";
   navMain.dataset.active = "true";
@@ -325,7 +360,7 @@ onAuthStateChange((session) => {
   const isSignOut = wasSignedIn === true && !nowSignedIn;
   wasSignedIn = nowSignedIn;
   if (nowSignedIn) {
-    showApp();
+    showWelcome();
   } else {
     // Best-effort: a clear failure must not block getting back to the auth screen.
     if (isSignOut) clearLocalData().catch((err) => console.error(err));
