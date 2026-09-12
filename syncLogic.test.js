@@ -80,3 +80,19 @@ test("buildOptimisticTasks drops blank lines", () => {
   const tasks = buildOptimisticTasks("Tâche A\n\n  \nTâche B", "user-1");
   assert.equal(tasks.length, 2);
 });
+
+test("applyMutation setReminderTime updates only the matching task", () => {
+  const tasks = [
+    makeTask({ id: "a", reminder_time: null }),
+    makeTask({ id: "b", reminder_time: null }),
+  ];
+  const result = applyMutation(tasks, { type: "setReminderTime", id: "a", reminderTime: "09:30" });
+  assert.equal(result.find((t) => t.id === "a").reminder_time, "09:30");
+  assert.equal(result.find((t) => t.id === "b").reminder_time, null);
+});
+
+test("applyMutation setReminderTime can clear a reminder by passing null", () => {
+  const tasks = [makeTask({ id: "a", reminder_time: "09:30" })];
+  const result = applyMutation(tasks, { type: "setReminderTime", id: "a", reminderTime: null });
+  assert.equal(result[0].reminder_time, null);
+});
