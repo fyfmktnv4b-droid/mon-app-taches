@@ -4,7 +4,7 @@ import { clearLocalData } from "./storage.js";
 import { getQuadrant, getPriorityTasks, getUnsorted, getSorted, splitActiveAndArchived } from "./quadrants.js";
 import { tasksToExportJson } from "./export.js";
 import { getSettings, setMorningReminderTime, setNotificationsEnabled } from "./settings.js";
-import { subscribeToPush, unsubscribeFromPush } from "./push.js";
+import { subscribeToPush, unsubscribeFromPush, hasPushSubscription } from "./push.js";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -185,7 +185,23 @@ async function renderHistoryView() {
 }
 
 async function renderSettingsView() {
-  const settings = await getSettings();
+  // getSettings() goes through supabase.auth.getUser() (network-dependent),
+  // so offline it throws before anything is rendered — leaving the previous
+  // screen on display. Degrade to a clear message instead.
+  let settings;
+  try {
+    settings = await getSettings();
+  } catch (_err) {
+    mainView.innerHTML = `
+      <h2>Réglages</h2>
+      <p class="empty">Réglages indisponibles hors-ligne — reconnecte-toi au réseau.</p>
+    `;
+    return;
+  }
+  // The flag is account-wide; the subscription is per-device. Only claim
+  // notifications are on when this device is actually subscribed too.
+  const subscribed = await hasPushSubscription();
+  const notificationsOn = settings.notifications_enabled && subscribed;
   mainView.innerHTML = `
     <h2>Réglages</h2>
     <form id="settings-form">
@@ -195,7 +211,7 @@ async function renderSettingsView() {
       </label>
       <button type="submit">Enregistrer l'heure</button>
     </form>
-    <button id="toggle-notifications">${settings.notifications_enabled ? "Désactiver" : "Activer"} les notifications</button>
+    <button id="toggle-notifications">${notificationsOn ? "Désactiver" : "Activer"} les notifications</button>
   `;
 
   document.getElementById("settings-form").addEventListener("submit", (event) => {
@@ -206,7 +222,7 @@ async function renderSettingsView() {
 
   document.getElementById("toggle-notifications").addEventListener("click", () => {
     safely(async () => {
-      if (settings.notifications_enabled) {
+      if (notificationsOn) {
         await unsubscribeFromPush();
         await setNotificationsEnabled(false);
       } else {

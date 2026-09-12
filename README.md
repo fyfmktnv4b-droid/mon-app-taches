@@ -2,11 +2,11 @@
 
 PWA de planification matinale : capture rapide de tâches, tri via une matrice urgent/important (Eisenhower), priorités du jour (urgent + important) mises en évidence sans troncature. Synchronisée entre appareils via Supabase (email/mot de passe), avec export JSON local en filet de sécurité.
 
-## État actuel (Plans 1 et 2 sur 3)
+## État actuel (Plans 1 à 3 sur 3 — terminés)
 
-Implémenté : authentification, CRUD des tâches, tri Eisenhower avec tests unitaires, écran principal (capture, à trier, priorités, matrice, historique en lecture seule), export JSON, cache hors-ligne (IndexedDB + file de mutations rejouée au retour du réseau) et installation PWA (manifest, icônes, service worker).
+Implémenté : authentification, CRUD des tâches, tri Eisenhower avec tests unitaires, écran principal (capture, à trier, priorités, matrice, historique en lecture seule), export JSON, cache hors-ligne (IndexedDB + file de mutations rejouée au retour du réseau), installation PWA (manifest, icônes, service worker), rappels par notification push (Web Push / VAPID, abonnement par appareil) et écran Réglages (heure du rappel matinal, activation des notifications).
 
-À venir : rappels par notification push, écran Réglages, keep-alive (Plan 3). Voir `docs/superpowers/specs/2026-09-04-mon-app-taches-design.md` pour la conception complète, et `docs/superpowers/plans/` pour le détail de chaque plan.
+La conception est désormais entièrement implémentée. Voir `docs/superpowers/specs/2026-09-04-mon-app-taches-design.md` pour la conception complète, et `docs/superpowers/plans/` pour le détail de chaque plan.
 
 ## Déploiement
 
