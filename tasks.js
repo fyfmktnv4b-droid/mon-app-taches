@@ -26,6 +26,11 @@ export async function setTag(id, tagName, value) {
   if (error) throw error;
 }
 
+export async function setReminderTime(id, reminderTime) {
+  const { error } = await supabase.from("tasks").update({ reminder_time: reminderTime }).eq("id", id);
+  if (error) throw error;
+}
+
 export async function setDone(id, done, completedAt = done ? new Date().toISOString() : null) {
   const { error } = await supabase
     .from("tasks")
