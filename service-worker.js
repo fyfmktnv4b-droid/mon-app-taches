@@ -2,7 +2,7 @@
 // file listed in ASSETS below. This is what makes the browser notice a
 // new service worker and refresh its cache — there's no build tool here
 // to hash files automatically, so this is a manual, required step.
-const CACHE_VERSION = "v3";
+const CACHE_VERSION = "v4";
 const CACHE_NAME = `mon-app-taches-${CACHE_VERSION}`;
 
 const ASSETS = [
@@ -31,6 +31,8 @@ const ASSETS = [
   "./vendor/supabase-phoenix-0.4.5.js",
   "./vendor/iceberg-js-0.8.1.js",
   "./vendor/tslib-2.8.1.js",
+  "./push.js",
+  "./settings.js",
 ];
 
 self.addEventListener("install", (event) => {
@@ -59,6 +61,35 @@ self.addEventListener("fetch", (event) => {
         }
         return response;
       });
+    })
+  );
+});
+
+self.addEventListener("push", (event) => {
+  let payload = { title: "Mes Tâches", body: "Nouvelle notification" };
+  if (event.data) {
+    try {
+      payload = event.data.json();
+    } catch (_err) {
+      payload = { title: "Mes Tâches", body: event.data.text() };
+    }
+  }
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      icon: "./icons/icon-192.png",
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ("focus" in client) return client.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow("./");
     })
   );
 });
