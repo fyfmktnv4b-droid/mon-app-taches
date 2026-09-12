@@ -874,9 +874,15 @@ This task cannot be delegated to a coding subagent: it requires live interaction
   Run: `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"`
   Save the output — it's needed in Steps 2 and 4.
 
-- [ ] **Step 2: Deploy the Edge Function via the Supabase Dashboard**
+- [ ] **Step 2: Deploy the Edge Function**
 
-  Dashboard → Edge Functions → Create a new function named `send-reminders` → paste the full contents of `supabase/functions/send-reminders/index.ts` → Deploy.
+  **Important — this must deploy BOTH files, not just `index.ts`.** Task 7 extracted `localParts`/`isDueNow` into a sibling file, `supabase/functions/send-reminders/reminderLogic.js`, imported via `import { localParts, isDueNow } from "./reminderLogic.js";`. Pasting only `index.ts`'s contents into a single-file editor deploys a function that fails to resolve that import on every invocation — `pg_cron`/`pg_net` fire-and-forget the request, so this failure produces no visible error anywhere; the only symptom is that reminders silently never arrive.
+
+  Use one of:
+  - **Preferred — Supabase CLI:** `supabase functions deploy send-reminders` from the repo root (with the CLI linked to the project). This uploads the whole `supabase/functions/send-reminders/` directory, so the relative import resolves correctly. `reminderLogic.test.js` isn't reachable from the entrypoint and won't be bundled.
+  - **Dashboard, if the CLI isn't set up:** use the dashboard's multi-file function editor and create BOTH `index.ts` and `reminderLogic.js` with their exact repo contents, preserving the relative path so `./reminderLogic.js` resolves.
+
+  After deploying, verify with `supabase functions list` (CLI) or the dashboard's function detail page that a request actually reaches the handler rather than failing at import time — Step 6 below re-verifies this end-to-end.
 
 - [ ] **Step 3: Set Edge Function secrets**
 
