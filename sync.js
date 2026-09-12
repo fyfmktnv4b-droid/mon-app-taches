@@ -1,5 +1,5 @@
 import { supabase } from "./supabaseClient.js";
-import { createTasksFromLines, listTasks, setTag, setDone, deleteTask } from "./tasks.js";
+import { createTasksFromLines, listTasks, setTag, setDone, deleteTask, setReminderTime } from "./tasks.js";
 import { getCachedTasks, setCachedTasks, getPendingMutations, enqueueMutation, removeMutation } from "./storage.js";
 import { applyMutation, resolveMutationIds, buildOptimisticTasks } from "./syncLogic.js";
 
@@ -50,6 +50,17 @@ export async function updateTag(id, tagName, value) {
     await setTag(id, tagName, value);
   } catch (_err) {
     const mutation = { type: "setTag", id, tagName, value };
+    await enqueueMutation(mutation);
+    const cached = await getCachedTasks();
+    await setCachedTasks(applyMutation(cached, mutation));
+  }
+}
+
+export async function updateReminderTime(id, reminderTime) {
+  try {
+    await setReminderTime(id, reminderTime);
+  } catch (_err) {
+    const mutation = { type: "setReminderTime", id, reminderTime };
     await enqueueMutation(mutation);
     const cached = await getCachedTasks();
     await setCachedTasks(applyMutation(cached, mutation));
@@ -109,6 +120,8 @@ async function doFlush() {
         await setDone(resolved.id, resolved.done, resolved.completedAt);
       } else if (resolved.type === "delete") {
         await deleteTask(resolved.id);
+      } else if (resolved.type === "setReminderTime") {
+        await setReminderTime(resolved.id, resolved.reminderTime);
       }
       await removeMutation(mutation.queueId);
     } catch (_err) {
