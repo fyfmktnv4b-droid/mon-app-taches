@@ -1,8 +1,10 @@
 import { signUp, signIn, signOut, onAuthStateChange } from "./supabaseClient.js";
-import { loadTasks, captureTasks, updateTag, updateDone, removeTask, flushQueue, initSync } from "./sync.js";
+import { loadTasks, captureTasks, updateTag, updateDone, removeTask, updateReminderTime, flushQueue, initSync } from "./sync.js";
 import { clearLocalData } from "./storage.js";
 import { getQuadrant, getPriorityTasks, getUnsorted, getSorted, splitActiveAndArchived } from "./quadrants.js";
 import { tasksToExportJson } from "./export.js";
+import { getSettings, setMorningReminderTime, setNotificationsEnabled } from "./settings.js";
+import { subscribeToPush, unsubscribeFromPush } from "./push.js";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -23,6 +25,7 @@ const appError = document.getElementById("app-error");
 const mainView = document.getElementById("main-view");
 const navMain = document.getElementById("nav-main");
 const navHistory = document.getElementById("nav-history");
+const navSettings = document.getElementById("nav-settings");
 
 let currentView = "main";
 let wasSignedIn = null; // sentinel: forces the first auth event through
@@ -79,6 +82,7 @@ function taskRowHtml(task) {
     <div class="task-row" data-id="${task.id}">
       <input type="checkbox" class="task-done" ${task.done ? "checked" : ""}>
       <span class="task-text">${escapeHtml(task.text)}</span>
+      <input type="time" class="task-reminder" value="${task.reminder_time ? task.reminder_time.slice(0, 5) : ""}">
       <button class="task-urgent" data-active="${task.urgent === true}">Urgent</button>
       <button class="task-important" data-active="${task.important === true}">Important</button>
       <button class="task-delete">×</button>
@@ -121,6 +125,9 @@ function wireTaskRows(container) {
     });
     row.querySelector(".task-delete").addEventListener("click", () => {
       safely(() => removeTask(id));
+    });
+    row.querySelector(".task-reminder").addEventListener("change", (event) => {
+      safely(() => updateReminderTime(id, event.target.value || null));
     });
   });
 }
@@ -177,10 +184,44 @@ async function renderHistoryView() {
   // Read-only per spec — no wireTaskRows here.
 }
 
+async function renderSettingsView() {
+  const settings = await getSettings();
+  mainView.innerHTML = `
+    <h2>Réglages</h2>
+    <form id="settings-form">
+      <label>
+        Heure du rappel matinal
+        <input type="time" id="morning-reminder-time" value="${settings.morning_reminder_time ? settings.morning_reminder_time.slice(0, 5) : ""}">
+      </label>
+      <button type="submit">Enregistrer l'heure</button>
+    </form>
+    <button id="toggle-notifications">${settings.notifications_enabled ? "Désactiver" : "Activer"} les notifications</button>
+  `;
+
+  document.getElementById("settings-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const value = document.getElementById("morning-reminder-time").value;
+    safely(() => setMorningReminderTime(value || null));
+  });
+
+  document.getElementById("toggle-notifications").addEventListener("click", () => {
+    safely(async () => {
+      if (settings.notifications_enabled) {
+        await unsubscribeFromPush();
+        await setNotificationsEnabled(false);
+      } else {
+        await subscribeToPush();
+        await setNotificationsEnabled(true);
+      }
+    });
+  });
+}
+
 async function render() {
   try {
     if (currentView === "main") await renderMainView();
-    else await renderHistoryView();
+    else if (currentView === "history") await renderHistoryView();
+    else await renderSettingsView();
     clearAppError();
   } catch (err) {
     showAppError(err);
@@ -191,6 +232,7 @@ navMain.addEventListener("click", () => {
   currentView = "main";
   navMain.dataset.active = "true";
   navHistory.dataset.active = "false";
+  navSettings.dataset.active = "false";
   render();
 });
 
@@ -198,6 +240,15 @@ navHistory.addEventListener("click", () => {
   currentView = "history";
   navMain.dataset.active = "false";
   navHistory.dataset.active = "true";
+  navSettings.dataset.active = "false";
+  render();
+});
+
+navSettings.addEventListener("click", () => {
+  currentView = "settings";
+  navMain.dataset.active = "false";
+  navHistory.dataset.active = "false";
+  navSettings.dataset.active = "true";
   render();
 });
 
@@ -221,6 +272,13 @@ signUpButton.addEventListener("click", async () => {
 });
 
 signOutButton.addEventListener("click", async () => {
+  try {
+    await unsubscribeFromPush();
+  } catch (err) {
+    // Best-effort: never block sign-out on a push-unsubscribe failure (e.g.
+    // no subscription existed, or the browser doesn't support Push).
+    console.error(err);
+  }
   try {
     await signOut();
   } catch (err) {
