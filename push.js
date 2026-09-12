@@ -25,8 +25,30 @@ async function requireUser() {
   return user;
 }
 
+// `navigator.serviceWorker.ready` never rejects — it only resolves once an
+// active registration exists. If the worker never becomes ready (registration
+// failed silently, private mode, worker unregistered via devtools), awaiting it
+// hangs forever. Race it against a timeout so callers always get an answer.
+async function readyRegistration() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return null;
+  return Promise.race([
+    navigator.serviceWorker.ready,
+    new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
+  ]);
+}
+
 export async function subscribeToPush() {
-  const registration = await navigator.serviceWorker.ready;
+  // Must be the FIRST statement, before any await: Safari gates the permission
+  // prompt on the click's transient user activation, which an intervening await
+  // can consume. Safari also never prompts implicitly from subscribe().
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") {
+    throw new Error("Notifications refusées dans les réglages du navigateur.");
+  }
+  const registration = await readyRegistration();
+  if (!registration) {
+    throw new Error("Les notifications ne sont pas disponibles sur cet appareil/navigateur.");
+  }
   const subscription = await registration.pushManager.subscribe({
     userVisibleOnly: true,
     applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
@@ -46,11 +68,22 @@ export async function subscribeToPush() {
 }
 
 export async function unsubscribeFromPush() {
-  const registration = await navigator.serviceWorker.ready;
+  const registration = await readyRegistration();
+  if (!registration) return; // Nothing to unsubscribe if push was never available here.
   const subscription = await registration.pushManager.getSubscription();
   if (!subscription) return;
   const endpoint = subscription.endpoint;
   await subscription.unsubscribe();
   const { error } = await supabase.from("push_subscriptions").delete().eq("endpoint", endpoint);
   if (error) throw error;
+}
+
+// The account-wide `notifications_enabled` flag says what the user wants; this
+// says whether THIS device is actually subscribed. Both must be true for the
+// toggle to read "Désactiver".
+export async function hasPushSubscription() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return false;
+  const registration = await navigator.serviceWorker.ready;
+  const subscription = await registration.pushManager.getSubscription();
+  return subscription !== null;
 }
