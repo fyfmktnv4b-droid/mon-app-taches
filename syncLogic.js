@@ -6,6 +6,10 @@ export function applyMutation(tasks, mutation) {
       return tasks.map((t) =>
         t.id === mutation.id ? { ...t, [mutation.tagName]: mutation.value } : t
       );
+    case "setReminderTime":
+      return tasks.map((t) =>
+        t.id === mutation.id ? { ...t, reminder_time: mutation.reminderTime } : t
+      );
     case "setDone":
       return tasks.map((t) =>
         t.id === mutation.id ? { ...t, done: mutation.done, completed_at: mutation.completedAt } : t
