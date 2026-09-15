@@ -84,6 +84,7 @@ nav { display: flex; gap: 8px; flex-wrap: wrap; }
 #priority-list .task-urgent[data-active="true"], #priority-list .task-important[data-active="true"] { background: #fff; color: var(--sage-deep); }
 #priority-list .task-delete { border-color: var(--pink-soft); color: var(--pink-soft); }
 #priority-list .task-delete:hover { background: rgba(243, 217, 214, 0.25); }
+#priority-list .empty { color: rgba(255, 255, 255, 0.65); }
 #app-error { color: var(--error); font-size: 13px; padding: 0 16px; max-width: 640px; margin: 0 auto; }
 
 #welcome {
