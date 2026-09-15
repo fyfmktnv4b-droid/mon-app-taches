@@ -51,6 +51,12 @@ function showWelcome() {
   welcomeDay.textContent = scene.label;
   welcomeQuote.textContent = `« ${quote} » — ${author}`;
   welcomeVerse.textContent = `${verse} (${reference})`;
+  // Never let both text blocks sit at full size together — whichever is
+  // longer goes compact, so the day title and scene image (both fixed)
+  // don't get squeezed off-screen by two tall blocks stacking.
+  const quoteIsLonger = quote.length >= verse.length;
+  welcomeQuote.classList.toggle("compact", quoteIsLonger);
+  welcomeVerse.classList.toggle("compact", !quoteIsLonger);
   welcomeScene.alt = scene.alt;
   welcomeScene.hidden = false;
   welcomeSceneFallback.hidden = true;
