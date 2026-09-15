@@ -37,13 +37,15 @@
   <section id="app" hidden>
     <header>
       <h1>Mes Tâches</h1>
-      <nav>
-        <button id="nav-main" data-active="true">Aujourd'hui</button>
-        <button id="nav-history" data-active="false">Historique</button>
-        <button id="nav-settings" data-active="false">Réglages</button>
-      </nav>
-      <button id="sign-out">Déconnexion</button>
-      <button id="export-json">Exporter (JSON)</button>
+      <div class="header-actions">
+        <nav>
+          <button id="nav-main" data-active="true">Aujourd'hui</button>
+          <button id="nav-history" data-active="false">Historique</button>
+          <button id="nav-settings" data-active="false">Réglages</button>
+        </nav>
+        <button id="sign-out">Déconnexion</button>
+        <button id="export-json">Exporter (JSON)</button>
+      </div>
     </header>
     <p id="app-error"></p>
     <main id="main-view"></main>

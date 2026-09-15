@@ -21,6 +21,7 @@ const welcomeQuote = document.getElementById("welcome-quote");
 const welcomeVerse = document.getElementById("welcome-verse");
 const welcomeScene = document.getElementById("welcome-scene");
 const welcomeSceneFallback = document.getElementById("welcome-scene-fallback");
+const welcomeContinue = document.getElementById("welcome-continue");
 const appSection = document.getElementById("app");
 const authForm = document.getElementById("auth-form");
 const authError = document.getElementById("auth-error");
@@ -277,7 +278,7 @@ async function render() {
   }
 }
 
-welcomeSection.addEventListener("click", enterApp);
+welcomeContinue.addEventListener("click", enterApp);
 
 navMain.addEventListener("click", () => {
   currentView = "main";
