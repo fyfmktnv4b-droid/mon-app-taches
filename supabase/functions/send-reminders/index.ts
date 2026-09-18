@@ -93,7 +93,7 @@ Deno.serve(async (req) => {
 
     const ok = await sendPushToUser(s.user_id, {
       title: "Tes priorités du jour",
-      body: "Ouvre l'app pour voir tes tâches urgentes et importantes.",
+      body: "Il est temps de consigner tes tâches !",
     });
     if (!ok) console.error(`morning reminder push failed for user ${s.user_id}`);
   }
