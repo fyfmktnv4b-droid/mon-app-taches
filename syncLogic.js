@@ -22,7 +22,11 @@ export function applyMutation(tasks, mutation) {
 }
 
 export function resolveMutationIds(mutation, idMap) {
-  if (mutation.type === "create" || !idMap.has(mutation.id)) return mutation;
+  // `mutation.id === undefined` couvre les mutations qui ne portent pas d'id de
+  // tâche du tout (les coches de routine partagent cette file) : elles doivent
+  // repartir inchangées, sans dépendre du fait que idMap.has(undefined) soit faux.
+  if (mutation.type === "create" || mutation.id === undefined) return mutation;
+  if (!idMap.has(mutation.id)) return mutation;
   return { ...mutation, id: idMap.get(mutation.id) };
 }
 

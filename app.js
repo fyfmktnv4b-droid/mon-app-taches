@@ -1,12 +1,15 @@
 import { signUp, signIn, signOut, onAuthStateChange } from "./supabaseClient.js";
-import { loadTasks, captureTasks, updateTag, updateDone, removeTask, updateReminderTime, flushQueue, initSync } from "./sync.js";
+import { loadTasks, captureTasks, updateTag, updateDone, removeTask, updateReminderTime, flushQueue, initSync, loadAllRoutines, loadRoutine, toggleRoutineCheck } from "./sync.js";
 import { clearLocalData } from "./storage.js";
 import { getQuadrant, getPriorityTasks, getUnsorted, getSorted, splitActiveAndArchived } from "./quadrants.js";
-import { tasksToExportJson } from "./export.js";
+import { fullExportJson } from "./export.js";
 import { getSettings, setMorningReminderTime, setNotificationsEnabled } from "./settings.js";
 import { subscribeToPush, unsubscribeFromPush, hasPushSubscription } from "./push.js";
 import { pickQuoteForDate } from "./quotes.js";
 import { sceneForDay } from "./dayScenes.js";
+import { mountRoutineBlock } from "./routineBlock.js";
+import { localDateString } from "./localDate.js";
+import { MORNING_KEYS, MORNING_LABELS, SKIP_KEY, isChecked, isMorningDone, shouldShowRoutine } from "./routineLogic.js";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -22,6 +25,11 @@ const welcomeVerse = document.getElementById("welcome-verse");
 const welcomeScene = document.getElementById("welcome-scene");
 const welcomeSceneFallback = document.getElementById("welcome-scene-fallback");
 const welcomeContinue = document.getElementById("welcome-continue");
+const routineSection = document.getElementById("routine");
+const routineChecks = document.getElementById("routine-checks");
+const routineContinue = document.getElementById("routine-continue");
+const routineSkip = document.getElementById("routine-skip");
+const openRoutine = document.getElementById("open-routine");
 const appSection = document.getElementById("app");
 const authForm = document.getElementById("auth-form");
 const authError = document.getElementById("auth-error");
@@ -38,11 +46,18 @@ const navSettings = document.getElementById("nav-settings");
 
 let currentView = "main";
 let wasSignedIn = null; // sentinel: forces the first auth event through
+let routineLocalDate = null; // the local day the routine screen is currently showing
+let routineState = {}; // that day's checks, as last known (server, cache, or optimistic)
 
 function showWelcome() {
   authSection.hidden = true;
+  routineSection.hidden = true;
   appSection.hidden = true;
   welcomeSection.hidden = false;
+  // Reset in case a previous sign-in's click left this disabled (see the
+  // welcomeContinue click handler below) — a fresh welcome screen must
+  // always start with a usable button.
+  welcomeContinue.disabled = false;
 
   const now = new Date();
   const scene = sceneForDay(now);
@@ -70,6 +85,7 @@ function showWelcome() {
 
 async function enterApp() {
   welcomeSection.hidden = true;
+  routineSection.hidden = true;
   authSection.hidden = true;
   appSection.hidden = false;
   mainView.innerHTML = "";
@@ -83,9 +99,72 @@ async function enterApp() {
 
 function showAuth() {
   welcomeSection.hidden = true;
+  routineSection.hidden = true;
   appSection.hidden = true;
   authSection.hidden = false;
   mainView.innerHTML = "";
+}
+
+// Builds the four morning checkboxes from routineState and wires each one to
+// write through toggleRoutineCheck(). Re-run after every toggle so a box
+// reflects the merged (not just locally-clicked) value, and so "Continuer"'s
+// disabled state always matches what's actually been saved.
+function renderRoutineChecks() {
+  routineChecks.innerHTML = MORNING_KEYS.map((key) => `
+    <label class="routine-check">
+      <input type="checkbox" class="routine-check-input" data-key="${key}" ${isChecked(routineState, key) ? "checked" : ""}>
+      <span>${MORNING_LABELS[key]}</span>
+    </label>
+  `).join("");
+
+  routineChecks.querySelectorAll(".routine-check-input").forEach((input) => {
+    input.addEventListener("change", () => {
+      const key = input.dataset.key;
+      const value = input.checked;
+      // Offline, toggleRoutineCheck() queues the write and returns the
+      // optimistic result; it only rejects if the local queue fails too.
+      toggleRoutineCheck(routineLocalDate, key, value).then((updated) => {
+        routineState = updated.checks;
+        routineContinue.disabled = !isMorningDone(routineState);
+      }).catch((err) => {
+        console.error(err);
+        input.checked = !value;
+      });
+    });
+  });
+
+  routineContinue.disabled = !isMorningDone(routineState);
+}
+
+function showRoutineScreen() {
+  welcomeSection.hidden = true;
+  authSection.hidden = true;
+  appSection.hidden = true;
+  routineSection.hidden = false;
+  renderRoutineChecks();
+}
+
+// Called from "Commencer". Checks the day's routine — server-first with an
+// offline/slow-network fallback to the local cache (loadRoutine(), sync.js)
+// — and skips straight to the task screen if it's already done or was
+// skipped earlier today. Never blocks entry: if anything here goes wrong,
+// fail open to the task screen rather than strand the user on a blank step.
+async function maybeShowRoutine() {
+  routineLocalDate = localDateString();
+  let routine;
+  try {
+    routine = await loadRoutine(routineLocalDate);
+  } catch (err) {
+    console.error(err);
+    await enterApp();
+    return;
+  }
+  routineState = routine.checks ?? {};
+  if (shouldShowRoutine(routineState)) {
+    showRoutineScreen();
+  } else {
+    await enterApp();
+  }
 }
 
 function showAppError(err) {
@@ -188,6 +267,8 @@ async function renderMainView() {
       <button type="submit">Ajouter</button>
     </form>
 
+    <div id="routine-block"></div>
+
     <h2>À trier (${unsorted.length})</h2>
     <div id="unsorted-list">${unsorted.map(taskRowHtml).join("") || '<p class="empty">Rien à trier</p>'}</div>
 
@@ -210,6 +291,7 @@ async function renderMainView() {
   });
 
   wireTaskRows(mainView);
+  mountRoutineBlock(document.getElementById("routine-block"));
 }
 
 async function renderHistoryView() {
@@ -284,7 +366,39 @@ async function render() {
   }
 }
 
-welcomeContinue.addEventListener("click", enterApp);
+welcomeContinue.addEventListener("click", async () => {
+  // Guards against a double tap while loadRoutine() is in flight (up to the
+  // 2s network timeout in sync.js) — the screen is about to change anyway,
+  // so there's nothing to restore the label to afterwards.
+  welcomeContinue.disabled = true;
+  await maybeShowRoutine();
+});
+
+routineContinue.addEventListener("click", enterApp);
+
+// Manual reopen from the task screen: always shows the routine, even if it
+// was completed or skipped today, so a box can still be checked later.
+openRoutine.addEventListener("click", async () => {
+  routineLocalDate = localDateString();
+  try {
+    routineState = (await loadRoutine(routineLocalDate)).checks ?? {};
+  } catch (err) {
+    console.error(err);
+    routineState = {};
+  }
+  showRoutineScreen();
+});
+
+routineSkip.addEventListener("click", () => {
+  // A skip is just one more key in the same jsonb row (SKIP_KEY = "skipped").
+  // It only suppresses today's automatic prompt — it never locks the
+  // checkboxes, so reopening the routine later and checking a box still
+  // writes through normally. No guilt copy, no confirmation.
+  // Not awaited: a slow network must not hold the task screen back. The
+  // write is queued locally if it fails.
+  toggleRoutineCheck(routineLocalDate, SKIP_KEY, true).catch(console.error);
+  enterApp();
+});
 
 navMain.addEventListener("click", () => {
   currentView = "main";
@@ -347,7 +461,8 @@ signOutButton.addEventListener("click", async () => {
 exportButton.addEventListener("click", () => {
   safely(async () => {
     const tasks = await loadTasks();
-    const json = tasksToExportJson(tasks);
+    const routines = await loadAllRoutines();
+    const json = fullExportJson(tasks, routines);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
