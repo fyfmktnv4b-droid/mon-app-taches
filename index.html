@@ -36,6 +36,13 @@
     <button id="welcome-continue">Commencer</button>
   </section>
 
+  <section id="routine" hidden>
+    <h2>Routine du matin</h2>
+    <div id="routine-checks"></div>
+    <button id="routine-continue" disabled>Continuer</button>
+    <button id="routine-skip" type="button">Passer pour aujourd'hui</button>
+  </section>
+
   <section id="app" hidden>
     <header>
       <h1>Mes Tâches</h1>
@@ -45,6 +52,7 @@
           <button id="nav-history" data-active="false">Historique</button>
           <button id="nav-settings" data-active="false">Réglages</button>
         </nav>
+        <button id="open-routine">Routine</button>
         <button id="sign-out">Déconnexion</button>
         <button id="export-json">Exporter (JSON)</button>
       </div>

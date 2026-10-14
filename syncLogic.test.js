@@ -96,3 +96,19 @@ test("applyMutation setReminderTime can clear a reminder by passing null", () =>
   const result = applyMutation(tasks, { type: "setReminderTime", id: "a", reminderTime: null });
   assert.equal(result[0].reminder_time, null);
 });
+
+// --- cohabitation avec les coches de routine dans la file partagée ---
+
+test("applyMutation leaves tasks untouched for a routine mutation", () => {
+  const tasks = [{ id: "t1", text: "a", done: false }];
+  const result = applyMutation(tasks, {
+    type: "routineCheck", localDate: "2026-10-13", key: "meditate", value: true,
+  });
+  assert.deepEqual(result, tasks);
+});
+
+test("resolveMutationIds passes a routine mutation through unchanged", () => {
+  const idMap = new Map([["optimistic-1", "server-1"]]);
+  const mutation = { type: "routineCheck", localDate: "2026-10-13", key: "pray", value: true };
+  assert.equal(resolveMutationIds(mutation, idMap), mutation);
+});

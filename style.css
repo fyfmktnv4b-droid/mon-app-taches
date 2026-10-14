@@ -172,3 +172,77 @@ nav { display: flex; gap: 8px; flex-wrap: wrap; }
   margin-top: 40px;
   flex-shrink: 0;
 }
+
+/* ---------------------------------------------------------------------
+   Morning routine screen, between "Commencer" and the task view. Shown
+   only while the morning isn't done/skipped for today — see app.js's
+   maybeShowRoutine(). Tone is deliberately calm: no red, no counter that
+   could read as a broken streak, disabled state stays muted rather than
+   looking like a warning.
+   ------------------------------------------------------------------- */
+#routine {
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  text-align: center;
+}
+#routine[hidden] { display: none; }
+#routine h2 {
+  font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+  color: var(--sage-deep);
+  font-size: 26px;
+  margin: 0 0 28px;
+}
+#routine-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 280px;
+}
+.routine-check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1.5px solid var(--border-warm);
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+.routine-check input { width: 18px; height: 18px; accent-color: var(--sage-deep); cursor: pointer; }
+#routine-continue {
+  padding: 10px 28px;
+  font-size: 15px;
+  border-radius: 999px;
+  margin-top: 28px;
+}
+/* Never a failure color — just quieter, same spirit as everywhere else
+   in this screen. */
+#routine-continue:disabled {
+  background: var(--border-warm);
+  color: var(--ink-muted);
+  cursor: not-allowed;
+}
+#routine-skip {
+  margin-top: 14px;
+  padding: 4px 8px;
+  background: none;
+  border: none;
+  color: var(--ink-muted);
+  font-size: 13px;
+  font-weight: 400;
+  text-decoration: underline;
+}
+#routine-skip:hover { background: none; color: var(--ink); }
+
+/* Gym session + steps block on the task screen (routineBlock.js). Reuses
+   .routine-check from the morning screen; Sunday shows plain text instead. */
+.routine-block { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; }
+.routine-rest { margin: 0; padding: 4px 16px; color: var(--ink-muted); font-size: 15px; }
