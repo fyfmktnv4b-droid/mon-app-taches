@@ -236,11 +236,11 @@ function taskRowHtml(task, variant = "light") {
   const time = reminderTime(task);
   const isOpen = openRows.has(task.id);
   const pill = variant === "dark"
-    ? `<label class="reminder-pill ${time ? "set" : ""}"><span>${time || "+ Rappel"}</span><input type="time" class="task-reminder" value="${time}" aria-label="Heure du rappel"></label>`
+    ? `<button class="reminder-pill reminder-open ${time ? "set" : ""}" data-time="${time}" aria-label="Heure du rappel">${time || "+ Rappel"}</button>`
     : "";
   const reminderField = variant === "dark"
     ? ""
-    : `<label class="reminder-field">Rappel <input type="time" class="task-reminder" value="${time}"></label>`;
+    : `<button class="reminder-btn reminder-open" data-time="${time}">${time ? `Rappel ${time}` : "+ Rappel"}</button>`;
   return `
     <div class="task-row task-${variant}" data-id="${task.id}">
       <div class="task-main">
@@ -253,7 +253,6 @@ function taskRowHtml(task, variant = "light") {
       <div class="task-actions" ${isOpen ? "" : "hidden"}>
         ${variant === "unsorted" ? "" : tagButtonsHtml(task, false)}
         ${reminderField}
-        ${time ? '<button class="task-clear-reminder">Effacer le rappel</button>' : ""}
         <button class="task-delete">Supprimer</button>
       </div>
     </div>
@@ -298,12 +297,8 @@ function wireTaskRows(container) {
       event.currentTarget.setAttribute("aria-expanded", String(!actions.hidden));
       if (actions.hidden) openRows.delete(id); else openRows.add(id);
     });
-    row.querySelector(".task-clear-reminder")?.addEventListener("click", () => {
-      safely(() => updateReminderTime(id, null));
-    });
-    row.querySelector(".task-reminder").addEventListener("click", (event) => {
-      // Sur ordinateur, ouvre le sélecteur d'heure au clic sur la pastille.
-      try { event.currentTarget.showPicker?.(); } catch (_err) { /* déjà ouvert */ }
+    row.querySelector(".reminder-open")?.addEventListener("click", (event) => {
+      openReminderSheet(id, event.currentTarget.dataset.time);
     });
     row.querySelector(".task-urgent").addEventListener("click", () => {
       const active = row.querySelector(".task-urgent").dataset.active === "true";
@@ -316,9 +311,6 @@ function wireTaskRows(container) {
     row.querySelector(".task-delete").addEventListener("click", () => {
       openRows.delete(id);
       safely(() => removeTask(id));
-    });
-    row.querySelector(".task-reminder").addEventListener("change", (event) => {
-      safely(() => updateReminderTime(id, event.target.value || null));
     });
   });
 }
@@ -542,6 +534,48 @@ routineSkip.addEventListener("click", () => {
   enterApp();
 });
 
+// Feuille « Heure du rappel » : le choix reste un brouillon local tant qu'on
+// n'a pas touché « Valider » — rien n'est enregistré sur input/change, pour que
+// la molette d'iPhone puisse tourner librement.
+const reminderSheet = document.getElementById("reminder-sheet");
+const reminderInput = document.getElementById("reminder-input");
+const reminderOk = document.getElementById("reminder-ok");
+const reminderRemove = document.getElementById("reminder-remove");
+let reminderTaskId = null;
+let reminderDraft = "";
+
+function openReminderSheet(taskId, currentTime) {
+  reminderTaskId = taskId;
+  reminderDraft = currentTime || "09:00";
+  reminderInput.value = reminderDraft;
+  reminderRemove.hidden = !currentTime;
+  reminderOk.disabled = false;
+  reminderSheet.hidden = false;
+}
+
+function closeReminderSheet() {
+  reminderSheet.hidden = true;
+  reminderTaskId = null;
+}
+
+reminderInput.addEventListener("input", () => {
+  reminderDraft = reminderInput.value; // brouillon seulement
+  reminderOk.disabled = !reminderDraft;
+});
+reminderOk.addEventListener("click", () => {
+  const id = reminderTaskId;
+  const value = reminderDraft;
+  closeReminderSheet();
+  if (id && value) safely(() => updateReminderTime(id, value));
+});
+reminderRemove.addEventListener("click", () => {
+  const id = reminderTaskId;
+  closeReminderSheet();
+  if (id) safely(() => updateReminderTime(id, null));
+});
+document.getElementById("reminder-cancel").addEventListener("click", closeReminderSheet);
+document.getElementById("reminder-scrim").addEventListener("click", closeReminderSheet);
+
 function setMenuOpen(open) {
   menuPanel.hidden = !open;
   menuScrim.hidden = !open;
@@ -551,7 +585,7 @@ function setMenuOpen(open) {
 menuToggle.addEventListener("click", () => setMenuOpen(menuPanel.hidden));
 menuScrim.addEventListener("click", () => setMenuOpen(false));
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") setMenuOpen(false);
+  if (event.key === "Escape") { setMenuOpen(false); closeReminderSheet(); }
 });
 // Toute action du menu le referme (la déconnexion / sauvegarde gardent leur handler).
 menuPanel.addEventListener("click", (event) => {
