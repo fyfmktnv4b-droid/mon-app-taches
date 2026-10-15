@@ -6,8 +6,18 @@ import { MORNING_KEYS, countMorningDone, isChecked, plannedSession } from "./rou
 // Il lit et écrit lui-même la routine du jour ; l'appelant ne lui donne que
 // l'élément où s'afficher. Une erreur ici ne doit jamais gêner la liste des
 // tâches : en cas d'échec de lecture, le bloc reste simplement vide.
+// Cases « en attente » (cochées mais pas encore validées). Au niveau du module
+// pour survivre aux re-rendus de l'écran ; volontairement jamais écrites en
+// base : seule la validation écrit, via la même fonction que l'écran de routine.
+const pendingKeys = new Set();
+let pendingDate = null;
+
 export async function mountRoutineBlock(container) {
   const localDate = localDateString();
+  if (pendingDate !== localDate) {
+    pendingKeys.clear();
+    pendingDate = localDate;
+  }
   let checks;
   try {
     checks = (await loadRoutine(localDate)).checks ?? {};
@@ -21,13 +31,30 @@ export async function mountRoutineBlock(container) {
 
   const session = plannedSession(localDate);
 
+  // Une ligne : case + libellé, et « Validé ? » à droite tant qu'elle est en
+  // attente. Validée => case cochée et texte plus clair.
+  function itemHtml(key, labelHtml) {
+    const validated = isChecked(checks, key);
+    const pending = !validated && pendingKeys.has(key);
+    return `
+      <div class="routine-item ${validated ? "validated" : ""}">
+        <label class="routine-check">
+          <input type="checkbox" data-key="${key}" ${validated || pending ? "checked" : ""}>
+          <span>${labelHtml}</span>
+        </label>
+        ${pending ? `<button type="button" class="routine-validate" data-key="${key}">Validé ?</button>` : ""}
+      </div>`;
+  }
+
+  async function write(key, value) {
+    const updated = await toggleRoutineCheck(localDate, key, value);
+    checks = updated.checks ?? {};
+  }
+
   function render() {
     const gymRow = session.kind === "rest"
       ? `<p class="routine-rest">${session.label}</p>`
-      : `<label class="routine-check">
-           <input type="checkbox" data-key="gym" ${isChecked(checks, "gym") ? "checked" : ""}>
-           <span>Salle <em>(${session.kind === "optional" ? "facultative" : session.label})</em></span>
-         </label>`;
+      : itemHtml("gym", `Salle <em>(${session.kind === "optional" ? "facultative" : session.label})</em>`);
     const done = countMorningDone(checks);
     const dashes = MORNING_KEYS
       .map((_, i) => `<i class="${i < done ? "on" : ""}"></i>`)
@@ -41,23 +68,38 @@ export async function mountRoutineBlock(container) {
         </div>
         <div class="routine-row">
           ${gymRow}
-          <label class="routine-check">
-            <input type="checkbox" data-key="steps" ${isChecked(checks, "steps") ? "checked" : ""}>
-            <span>10 000 pas</span>
-          </label>
+          ${itemHtml("steps", "10 000 pas")}
         </div>
       </div>`;
+
     container.querySelectorAll("input[data-key]").forEach((input) => {
       input.addEventListener("change", () => {
-        const value = input.checked;
-        toggleRoutineCheck(localDate, input.dataset.key, value)
-          .then((updated) => {
-            checks = updated.checks ?? {};
+        const key = input.dataset.key;
+        if (isChecked(checks, key)) {
+          // Ligne validée : un tap annule la validation.
+          write(key, false).then(render).catch((err) => {
+            console.error(err);
+            input.checked = true;
+          });
+          return;
+        }
+        // Pas encore validée : le tap met en attente, ou annule l'attente.
+        if (input.checked) pendingKeys.add(key); else pendingKeys.delete(key);
+        render();
+      });
+    });
+    container.querySelectorAll(".routine-validate").forEach((button) => {
+      button.addEventListener("click", () => {
+        const key = button.dataset.key;
+        button.disabled = true;
+        write(key, true)
+          .then(() => {
+            pendingKeys.delete(key);
             render();
           })
           .catch((err) => {
             console.error(err);
-            input.checked = !value;
+            button.disabled = false;
           });
       });
     });
