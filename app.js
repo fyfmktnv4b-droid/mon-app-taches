@@ -1,7 +1,7 @@
 import { signUp, signIn, signOut, onAuthStateChange } from "./supabaseClient.js";
 import { loadTasks, captureTasks, updateTag, updateDone, removeTask, updateReminderTime, flushQueue, initSync, loadAllRoutines, loadRoutine, toggleRoutineCheck } from "./sync.js";
 import { clearLocalData } from "./storage.js";
-import { getQuadrant, getPriorityTasks, getUnsorted, getSorted, splitActiveAndArchived, firstNonEmptyIndex } from "./quadrants.js";
+import { getImportant, getOthers, getUnsorted, getSorted, splitActiveAndArchived } from "./quadrants.js";
 import { fullExportJson } from "./export.js";
 import { getSettings, setMorningReminderTime, setNotificationsEnabled } from "./settings.js";
 import { subscribeToPush, unsubscribeFromPush, hasPushSubscription } from "./push.js";
@@ -52,7 +52,6 @@ const navSettings = document.getElementById("nav-settings");
 
 let currentView = "main";
 let unsortedOpen = false; // bandeau « À trier » déplié ?
-let openGroups = null; // accordéons ouverts (clés q2/q3/q4) ; null = défaut (1er non vide)
 // Bande de routine : un seul élément, gardé d'un rendu à l'autre. Si on le
 // recréait vide à chaque rendu, l'écran raccourcirait d'une centaine de px le
 // temps que la routine soit relue, et le contenu « sauterait » vers le haut.
@@ -221,12 +220,12 @@ function reminderTime(task) {
   return task.reminder_time ? task.reminder_time.slice(0, 5) : "";
 }
 
-function tagButtonsHtml(task, withQuestion) {
-  const label = (tag, yes, no, ask) =>
-    task[tag] === true ? yes : task[tag] === false ? no : (withQuestion ? ask : yes);
+// Un seul choix : Important ou Autre. Chaque bouton fixe la valeur (il ne
+// bascule pas), ce qui sort aussi la tâche de « À trier ».
+function tagButtonsHtml(task) {
   return `
-    <button class="task-urgent" data-active="${task.urgent === true}">${label("urgent", "Urgent", "Pas urgent", "Urgent ?")}</button>
-    <button class="task-important" data-active="${task.important === true}">${label("important", "Important", "Pas important", "Important ?")}</button>
+    <button class="task-important" data-active="${task.important === true}">Important</button>
+    <button class="task-other" data-active="${task.important === false}">Autre</button>
   `;
 }
 
@@ -249,9 +248,9 @@ function taskRowHtml(task, variant = "light") {
         ${pill}
         <button class="task-more" aria-label="Options" aria-expanded="${isOpen}">•••</button>
       </div>
-      ${variant === "unsorted" ? `<div class="task-sort">${tagButtonsHtml(task, true)}</div>` : ""}
+      ${variant === "unsorted" ? `<div class="task-sort">${tagButtonsHtml(task)}</div>` : ""}
       <div class="task-actions" ${isOpen ? "" : "hidden"}>
-        ${variant === "unsorted" ? "" : tagButtonsHtml(task, false)}
+        ${variant === "unsorted" ? "" : tagButtonsHtml(task)}
         ${reminderField}
         <button class="task-delete">Supprimer</button>
       </div>
@@ -266,22 +265,6 @@ function historyRowHtml(task) {
       <span class="task-text">${escapeHtml(task.text)}</span>
       <span class="task-date">${date}</span>
     </div>
-  `;
-}
-
-const ACCORDION_ICON = '<svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
-
-function accordionHtml(key, title, tasks, isOpen) {
-  return `
-    <section class="accordion" data-key="${key}" data-open="${isOpen}">
-      <button class="accordion-toggle" aria-expanded="${isOpen}">
-        <span>${title} <span class="count">· ${tasks.length}</span></span>
-        ${ACCORDION_ICON}
-      </button>
-      <div class="accordion-body" ${isOpen ? "" : "hidden"}>
-        ${tasks.map((t) => taskRowHtml(t, "light")).join("")}
-      </div>
-    </section>
   `;
 }
 
@@ -300,13 +283,11 @@ function wireTaskRows(container) {
     row.querySelector(".reminder-open")?.addEventListener("click", (event) => {
       openReminderSheet(id, event.currentTarget.dataset.time);
     });
-    row.querySelector(".task-urgent").addEventListener("click", () => {
-      const active = row.querySelector(".task-urgent").dataset.active === "true";
-      safely(() => updateTag(id, "urgent", !active));
-    });
     row.querySelector(".task-important").addEventListener("click", () => {
-      const active = row.querySelector(".task-important").dataset.active === "true";
-      safely(() => updateTag(id, "important", !active));
+      safely(() => updateTag(id, "important", true));
+    });
+    row.querySelector(".task-other").addEventListener("click", () => {
+      safely(() => updateTag(id, "important", false));
     });
     row.querySelector(".task-delete").addEventListener("click", () => {
       openRows.delete(id);
@@ -337,15 +318,9 @@ async function renderMainView() {
   const { active } = splitActiveAndArchived(allTasks, todayDateString());
   const unsorted = getUnsorted(active);
   const sorted = getSorted(active);
-  const priority = getPriorityTasks(sorted);
-  const groups = [
-    { key: "q2", title: "Important, pas urgent", tasks: getQuadrant(sorted, false, true) },
-    { key: "q3", title: "Urgent, pas important", tasks: getQuadrant(sorted, true, false) },
-    { key: "q4", title: "Ni urgent ni important", tasks: getQuadrant(sorted, false, false) },
-  ];
-  const defaultOpen = firstNonEmptyIndex(groups.map((g) => g.tasks));
-  const isGroupOpen = (group, index) => (openGroups ? openGroups.has(group.key) : index === defaultOpen);
-  const nothingSorted = priority.length === 0 && groups.every((g) => g.tasks.length === 0);
+  const important = getImportant(sorted);
+  const others = getOthers(sorted);
+  const nothingSorted = important.length === 0 && others.length === 0;
 
   // Un rendu reconstruit tout l'écran : on retient où on en était (défilement,
   // élément ayant le focus) pour que cocher une tâche ne bouge rien.
@@ -362,10 +337,10 @@ async function renderMainView() {
   mainView.innerHTML = `
     <div id="routine-slot"></div>
 
-    ${priority.length ? `
+    ${important.length ? `
       <section class="priority-card">
-        <div class="priority-head"><span>Urgent + Important</span><span>${priority.length}</span></div>
-        ${priority.map((t) => taskRowHtml(t, "dark")).join("")}
+        <div class="priority-head"><span>Important</span><span>${important.length}</span></div>
+        ${important.map((t) => taskRowHtml(t, "dark")).join("")}
       </section>` : ""}
 
     ${unsorted.length ? `
@@ -379,7 +354,11 @@ async function renderMainView() {
         </div>
       </section>` : ""}
 
-    ${groups.map((g, i) => (g.tasks.length ? accordionHtml(g.key, g.title, g.tasks, isGroupOpen(g, i)) : "")).join("")}
+    ${others.length ? `
+      <section class="others-card">
+        <div class="others-head"><span>Autres</span><span>${others.length}</span></div>
+        ${others.map((t) => taskRowHtml(t, "light")).join("")}
+      </section>` : ""}
 
     ${nothingSorted ? '<p class="empty empty-all">Rien de trié pour l\'instant</p>' : ""}
   `;
@@ -390,22 +369,6 @@ async function renderMainView() {
     banner.dataset.open = String(unsortedOpen);
     banner.querySelector(".unsorted-list").hidden = !unsortedOpen;
     event.currentTarget.setAttribute("aria-expanded", String(unsortedOpen));
-  });
-
-  mainView.querySelectorAll(".accordion-toggle").forEach((button) => {
-    button.addEventListener("click", () => {
-      const section = button.closest(".accordion");
-      if (!openGroups) {
-        openGroups = new Set(
-          [...mainView.querySelectorAll(".accordion[data-open='true']")].map((el) => el.dataset.key)
-        );
-      }
-      const nowOpen = section.dataset.open !== "true";
-      section.dataset.open = String(nowOpen);
-      section.querySelector(".accordion-body").hidden = !nowOpen;
-      button.setAttribute("aria-expanded", String(nowOpen));
-      if (nowOpen) openGroups.add(section.dataset.key); else openGroups.delete(section.dataset.key);
-    });
   });
 
   wireTaskRows(mainView);

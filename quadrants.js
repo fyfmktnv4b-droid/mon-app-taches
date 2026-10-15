@@ -1,17 +1,20 @@
-export function getQuadrant(tasks, urgent, important) {
-  return tasks.filter((t) => t.urgent === urgent && t.important === important);
+// Deux catégories seulement : seule la colonne `important` compte. La colonne
+// `urgent` reste en base (pas de migration) mais l'app ne la lit plus.
+// important=true -> Important ; false -> Autres ; null -> à trier.
+export function getImportant(tasks) {
+  return tasks.filter((t) => t.important === true);
 }
 
-export function getPriorityTasks(tasks) {
-  return getQuadrant(tasks, true, true);
+export function getOthers(tasks) {
+  return tasks.filter((t) => t.important === false);
 }
 
 export function getUnsorted(tasks) {
-  return tasks.filter((t) => t.urgent === null || t.important === null);
+  return tasks.filter((t) => t.important === null);
 }
 
 export function getSorted(tasks) {
-  return tasks.filter((t) => t.urgent !== null && t.important !== null);
+  return tasks.filter((t) => t.important !== null);
 }
 
 export function splitActiveAndArchived(tasks, todayDateString) {
@@ -23,10 +26,4 @@ export function splitActiveAndArchived(tasks, todayDateString) {
     (isOldCompleted ? archived : active).push(task);
   }
   return { active, archived };
-}
-
-// Index du premier groupe non vide (celui qui s'ouvre par défaut dans les
-// accordéons), ou -1 si tous sont vides.
-export function firstNonEmptyIndex(groups) {
-  return groups.findIndex((group) => group.length > 0);
 }

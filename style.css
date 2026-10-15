@@ -227,12 +227,12 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 .task-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 0 10px 38px; }
 .task-actions[hidden] { display: none; }
 .task-sort { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 0 10px 38px; }
-.task-urgent, .task-important, .reminder-btn {
+.task-other, .task-important, .reminder-btn {
   background: transparent; color: var(--sage-deep); border: 1.5px solid var(--sage); font-weight: 500;
   border-radius: 999px; padding: 0 16px;
 }
-.task-urgent:hover, .task-important:hover, .reminder-btn:hover { background: rgba(143, 163, 126, 0.15); }
-.task-urgent[data-active="true"], .task-important[data-active="true"] {
+.task-other:hover, .task-important:hover, .reminder-btn:hover { background: rgba(143, 163, 126, 0.15); }
+.task-other[data-active="true"], .task-important[data-active="true"] {
   background: var(--sage-deep); color: #fff; border-color: var(--sage-deep);
 }
 .task-delete {
@@ -254,10 +254,10 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 .priority-card .task-done { accent-color: var(--pink-soft); }
 .priority-card .task-more { color: rgba(251, 246, 238, 0.6); }
 .priority-card .task-more:hover { background: rgba(251, 246, 238, 0.12); }
-.priority-card .task-urgent, .priority-card .task-important, .priority-card .reminder-btn {
+.priority-card .task-other, .priority-card .task-important, .priority-card .reminder-btn {
   border-color: rgba(251, 246, 238, 0.4); color: var(--cream);
 }
-.priority-card .task-urgent[data-active="true"], .priority-card .task-important[data-active="true"] {
+.priority-card .task-other[data-active="true"], .priority-card .task-important[data-active="true"] {
   background: var(--cream); color: var(--sage-deep);
 }
 .priority-card .task-delete { border-color: var(--pink-soft); color: var(--pink-soft); }
@@ -307,24 +307,17 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 .unsorted-list { padding: 0 18px 10px; }
 .unsorted-list[hidden] { display: none; }
 .unsorted-list .task-row + .task-row { border-top: 1px solid rgba(59, 50, 41, 0.12); }
-.unsorted-list .task-urgent, .unsorted-list .task-important { background: rgba(255, 255, 255, 0.55); }
-.unsorted-list .task-urgent[data-active="true"], .unsorted-list .task-important[data-active="true"] { background: var(--sage-deep); }
+.unsorted-list .task-other, .unsorted-list .task-important { background: rgba(255, 255, 255, 0.55); }
+.unsorted-list .task-other[data-active="true"], .unsorted-list .task-important[data-active="true"] { background: var(--sage-deep); }
 
-/* Accordéons : les trois autres quadrants */
-.accordion { background: var(--card); border: 1px solid var(--border-warm); border-radius: 24px; }
-.accordion-toggle {
-  border-radius: 24px;
-  width: 100%; min-height: 56px; padding: 0 18px 0 22px; display: flex; justify-content: space-between; align-items: center;
-  background: transparent; color: var(--ink); border-radius: 24px; font-size: 17px; font-weight: 700; text-align: left;
+/* Boîte « Autres » : toujours ouverte, pas d'accordéon. */
+.others-card { background: var(--card); border: 1px solid var(--border-warm); border-radius: 24px; padding: 16px 14px 12px; }
+.others-head {
+  display: flex; justify-content: space-between; align-items: center; padding: 0 8px 4px;
+  font-size: 17px; font-weight: 700; color: var(--ink);
 }
-.accordion-toggle:hover { background: rgba(143, 163, 126, 0.1); }
-.accordion-toggle .count { font-weight: 500; color: var(--ink-muted); }
-.accordion-toggle .chevron { color: var(--ink-muted); transition: transform 0.15s; }
-.accordion[data-open="true"] .accordion-toggle .chevron { transform: rotate(180deg); }
-.accordion-body { padding: 0 14px 12px; }
-.accordion-body[hidden] { display: none; }
-.accordion-body .task-row { background: var(--cream); border: 1px solid var(--border-warm); border-radius: 18px; padding: 2px 8px 0 14px; margin-top: 8px; }
-.accordion-body .task-actions { padding-left: 38px; }
+.others-head span:last-child { font-weight: 500; color: var(--ink-muted); }
+.others-card .task-row { background: var(--cream); border: 1px solid var(--border-warm); border-radius: 18px; padding: 2px 8px 0 14px; margin-top: 8px; }
 
 #welcome {
   height: 100vh;

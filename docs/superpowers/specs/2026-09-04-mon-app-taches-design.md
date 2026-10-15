@@ -270,3 +270,19 @@ d'avertissement avant la mise en pause effective.
   documentés si besoin futur, non implémenté.
 - Gestion formelle multi-utilisateur (export/suppression de compte en
   libre-service) au-delà de l'isolation RLS de base.
+
+## Changement (octobre 2026) : deux catégories, « Important » et « Autres »
+
+La matrice Eisenhower à quatre quadrants est remplacée par deux catégories.
+
+- Seule la colonne `important` est lue : `true` → **Important** (carte
+  sombre en haut), `false` → **Autres** (boîte dessous, toujours ouverte),
+  `null` → **À trier**.
+- La colonne `urgent` reste en base (aucune migration) mais l'app ne la lit
+  plus et ne l'écrit plus. Une tâche `urgent = true` avec `important = null`
+  reste dans « À trier » : jamais classée sans choix explicite.
+- « À trier » propose deux boutons, « Important » et « Autre ».
+- Rappels et notifications push ne dépendent que de `reminder_time` ;
+  `send-reminders` ne lit pas `urgent`.
+- Les fonctions de `quadrants.js` deviennent `getImportant`, `getOthers`,
+  `getUnsorted`, `getSorted` (tests mis à jour).
