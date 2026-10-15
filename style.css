@@ -304,8 +304,20 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 .unsorted-toggle:hover { background: rgba(255, 255, 255, 0.25); }
 .unsorted-cta { display: flex; align-items: center; gap: 6px; color: var(--ink-muted); font-size: 15px; font-weight: 600; }
 .unsorted-banner[data-open="true"] .unsorted-cta .chevron { transform: rotate(90deg); }
-.unsorted-list { padding: 0 18px 10px; }
-.unsorted-list[hidden] { display: none; }
+.unsorted-wrap { position: relative; }
+.unsorted-wrap[hidden] { display: none; }
+/* La liste défile dans la boîte, pas la page : overscroll-behavior: contain
+   empêche le défilement de « déborder » sur la page (important sur iOS). */
+.unsorted-list {
+  padding: 0 18px 10px; max-height: clamp(200px, 40dvh, 360px);
+  overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+}
+.unsorted-fade {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 36px; pointer-events: none;
+  border-radius: 0 0 24px 24px; opacity: 0; transition: opacity 0.15s;
+  background: linear-gradient(to bottom, rgba(243, 217, 214, 0), var(--pink-soft));
+}
+.unsorted-fade[data-visible="true"] { opacity: 1; }
 .unsorted-list .task-row + .task-row { border-top: 1px solid rgba(59, 50, 41, 0.12); }
 .unsorted-list .task-other, .unsorted-list .task-important { background: rgba(255, 255, 255, 0.55); }
 .unsorted-list .task-other[data-active="true"], .unsorted-list .task-important[data-active="true"] { background: var(--sage-deep); }

@@ -296,6 +296,14 @@ function wireTaskRows(container) {
   });
 }
 
+// Petit dégradé en bas de « À trier » tant qu'il reste de la liste à faire défiler.
+function updateUnsortedFade() {
+  const list = mainView.querySelector(".unsorted-list");
+  const fade = mainView.querySelector(".unsorted-fade");
+  if (!list || !fade) return;
+  fade.dataset.visible = String(list.scrollHeight - list.scrollTop - list.clientHeight > 4);
+}
+
 function formatHeaderDate(date) {
   const text = date.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
   return text.charAt(0).toUpperCase() + text.slice(1);
@@ -326,6 +334,7 @@ async function renderMainView() {
   // élément ayant le focus) pour que cocher une tâche ne bouge rien.
   const keepPosition = mainView.dataset.view === "main";
   const scrollTop = mainView.scrollTop;
+  const unsortedScroll = mainView.querySelector(".unsorted-list")?.scrollTop ?? 0;
   const focused = document.activeElement;
   const focusedRow = keepPosition && mainView.contains(focused) ? focused.closest(".task-row[data-id]") : null;
   const focusedSelector = focusedRow && focused.className
@@ -349,8 +358,11 @@ async function renderMainView() {
           <span class="unsorted-title">${unsorted.length} ${unsorted.length > 1 ? "tâches" : "tâche"} à trier</span>
           <span class="unsorted-cta">Trier <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span>
         </button>
-        <div class="unsorted-list" ${unsortedOpen ? "" : "hidden"}>
-          ${unsorted.map((t) => taskRowHtml(t, "unsorted")).join("")}
+        <div class="unsorted-wrap" ${unsortedOpen ? "" : "hidden"}>
+          <div class="unsorted-list">
+            ${unsorted.map((t) => taskRowHtml(t, "unsorted")).join("")}
+          </div>
+          <div class="unsorted-fade" aria-hidden="true"></div>
         </div>
       </section>` : ""}
 
@@ -367,7 +379,8 @@ async function renderMainView() {
     const banner = event.currentTarget.closest(".unsorted-banner");
     unsortedOpen = !unsortedOpen;
     banner.dataset.open = String(unsortedOpen);
-    banner.querySelector(".unsorted-list").hidden = !unsortedOpen;
+    banner.querySelector(".unsorted-wrap").hidden = !unsortedOpen;
+    updateUnsortedFade();
     event.currentTarget.setAttribute("aria-expanded", String(unsortedOpen));
   });
 
@@ -375,6 +388,13 @@ async function renderMainView() {
   mainView.querySelector("#routine-slot").replaceWith(routineHost);
   // Le contenu précédent reste affiché jusqu'à ce que le nouveau soit prêt.
   mountRoutineBlock(routineHost);
+
+  const unsortedList = mainView.querySelector(".unsorted-list");
+  if (unsortedList) {
+    unsortedList.addEventListener("scroll", updateUnsortedFade, { passive: true });
+    if (keepPosition) unsortedList.scrollTop = unsortedScroll;
+    updateUnsortedFade();
+  }
 
   if (keepPosition) {
     mainView.scrollTop = scrollTop;
