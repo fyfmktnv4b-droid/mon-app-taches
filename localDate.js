@@ -1,10 +1,8 @@
 // Date locale de l'appareil, au format "YYYY-MM-DD".
 //
-// Volontairement séparée de todayDateString() (app.js), qui calcule en UTC :
-// entre minuit et 2h du matin en Europe, l'UTC est encore la veille, et la
-// routine du jour repartirait donc à zéro avec un jour de retard. Cette
-// fonction-ci n'est utilisée que par la routine ; todayDateString() garde ses
-// trois usages existants (écran du jour, historique, nom du fichier d'export).
+// Sert de « aujourd'hui » pour toute l'app (routine, écran du jour, Historique,
+// nom du fichier d'export) : en UTC, entre minuit et 2h du matin en Europe, on
+// serait encore la veille.
 //
 // Le fuseau est lu sur l'appareil via Intl — jamais écrit en dur — mais reste
 // injectable pour que les tests soient déterministes.
