@@ -71,6 +71,18 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
       </button>
     </form>
+    <div id="reminder-sheet" hidden>
+      <div id="reminder-scrim"></div>
+      <div id="reminder-card" role="dialog" aria-label="Heure du rappel">
+        <h2>Heure du rappel</h2>
+        <input type="time" id="reminder-input">
+        <div class="reminder-actions">
+          <button type="button" id="reminder-cancel" class="sheet-secondary">Annuler</button>
+          <button type="button" id="reminder-ok" aria-label="Valider">Valider ✓</button>
+        </div>
+        <button type="button" id="reminder-remove" class="sheet-danger" hidden>Supprimer le rappel</button>
+      </div>
+    </div>
   </section>
 
   <script type="module" src="app.js"></script>

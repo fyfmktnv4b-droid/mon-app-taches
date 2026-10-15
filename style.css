@@ -227,21 +227,19 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 .task-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 0 10px 38px; }
 .task-actions[hidden] { display: none; }
 .task-sort { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 0 10px 38px; }
-.task-urgent, .task-important, .task-clear-reminder {
+.task-urgent, .task-important, .reminder-btn {
   background: transparent; color: var(--sage-deep); border: 1.5px solid var(--sage); font-weight: 500;
   border-radius: 999px; padding: 0 16px;
 }
-.task-urgent:hover, .task-important:hover, .task-clear-reminder:hover { background: rgba(143, 163, 126, 0.15); }
+.task-urgent:hover, .task-important:hover, .reminder-btn:hover { background: rgba(143, 163, 126, 0.15); }
 .task-urgent[data-active="true"], .task-important[data-active="true"] {
   background: var(--sage-deep); color: #fff; border-color: var(--sage-deep);
 }
 .task-delete {
-  background: transparent; color: var(--error); border: 1.5px solid var(--border-warm);
+  background: transparent; color: var(--ink-muted); border: 1.5px solid var(--border-warm);
   border-radius: 999px; padding: 0 16px; font-weight: 500;
 }
 .task-delete:hover { background: var(--pink-soft); }
-.reminder-field { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-muted); }
-.reminder-field input { min-height: 44px; }
 .empty { color: var(--ink-muted); font-size: 13px; }
 .empty-all { text-align: center; font-size: 15px; padding: 24px 0; }
 
@@ -256,7 +254,7 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 .priority-card .task-done { accent-color: var(--pink-soft); }
 .priority-card .task-more { color: rgba(251, 246, 238, 0.6); }
 .priority-card .task-more:hover { background: rgba(251, 246, 238, 0.12); }
-.priority-card .task-urgent, .priority-card .task-important, .priority-card .task-clear-reminder {
+.priority-card .task-urgent, .priority-card .task-important, .priority-card .reminder-btn {
   border-color: rgba(251, 246, 238, 0.4); color: var(--cream);
 }
 .priority-card .task-urgent[data-active="true"], .priority-card .task-important[data-active="true"] {
@@ -264,7 +262,6 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 }
 .priority-card .task-delete { border-color: var(--pink-soft); color: var(--pink-soft); }
 .priority-card .task-delete:hover { background: rgba(243, 217, 214, 0.2); }
-.priority-card .reminder-field { color: rgba(251, 246, 238, 0.75); }
 .reminder-pill {
   position: relative; flex: 0 0 auto; min-height: 44px; min-width: 44px; padding: 0 16px;
   display: flex; align-items: center; justify-content: center; border-radius: 999px;
@@ -275,9 +272,27 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
   background: transparent; color: var(--cream); font-size: 14px; font-weight: 500;
   border: 1.5px dashed rgba(251, 246, 238, 0.55);
 }
-.reminder-pill input {
-  position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; padding: 0; border: 0;
+.reminder-pill:hover { background: var(--pink-soft); }
+.reminder-pill:not(.set):hover { background: rgba(251, 246, 238, 0.12); }
+
+/* Feuille « Heure du rappel » */
+#reminder-sheet { position: absolute; inset: 0; z-index: 20; display: flex; align-items: flex-end; }
+#reminder-sheet[hidden] { display: none; }
+#reminder-scrim { position: absolute; inset: 0; background: rgba(59, 50, 41, 0.35); }
+#reminder-card {
+  position: relative; width: 100%; background: var(--card); border-radius: 28px 28px 0 0;
+  padding: 20px 20px calc(20px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 14px;
+  box-shadow: 0 -8px 28px rgba(59, 50, 41, 0.18);
 }
+#reminder-card h2 { margin: 0; font-size: 18px; font-weight: 800; text-align: center; }
+#reminder-input { align-self: center; min-height: 52px; font-size: 22px; text-align: center; border-radius: 16px; min-width: 160px; }
+.reminder-actions { display: flex; gap: 10px; }
+.reminder-actions button { flex: 1 1 0; border-radius: 999px; font-size: 16px; }
+.sheet-secondary { background: transparent; color: var(--sage-deep); border: 1.5px solid var(--sage); }
+.sheet-secondary:hover { background: rgba(143, 163, 126, 0.15); }
+#reminder-ok:disabled { background: var(--border-warm); color: var(--ink-muted); cursor: not-allowed; }
+.sheet-danger { background: transparent; color: var(--ink-muted); font-weight: 500; }
+.sheet-danger:hover { background: var(--pink-soft); }
 
 /* Bandeau « À trier » */
 .unsorted-banner { background: var(--pink-soft); border-radius: 24px; }
