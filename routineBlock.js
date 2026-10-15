@@ -32,14 +32,15 @@ export async function mountRoutineBlock(container) {
   const session = plannedSession(localDate);
 
   // Une ligne : case + libellé, et « Validé ? » à droite tant qu'elle est en
-  // attente. Validée => case cochée et texte plus clair.
+  // attente. Validée => case cochée, verrouillée (définitif, côté interface
+  // seulement) et texte plus clair.
   function itemHtml(key, labelHtml) {
     const validated = isChecked(checks, key);
     const pending = !validated && pendingKeys.has(key);
     return `
       <div class="routine-item ${validated ? "validated" : ""}">
         <label class="routine-check">
-          <input type="checkbox" data-key="${key}" ${validated || pending ? "checked" : ""}>
+          <input type="checkbox" data-key="${key}" ${validated || pending ? "checked" : ""} ${validated ? 'disabled aria-disabled="true"' : ""}>
           <span>${labelHtml}</span>
         </label>
         ${pending ? `<button type="button" class="routine-validate" data-key="${key}">Validé ?</button>` : ""}
@@ -75,15 +76,9 @@ export async function mountRoutineBlock(container) {
     container.querySelectorAll("input[data-key]").forEach((input) => {
       input.addEventListener("change", () => {
         const key = input.dataset.key;
-        if (isChecked(checks, key)) {
-          // Ligne validée : un tap annule la validation.
-          write(key, false).then(render).catch((err) => {
-            console.error(err);
-            input.checked = true;
-          });
-          return;
-        }
-        // Pas encore validée : le tap met en attente, ou annule l'attente.
+        // Une ligne validée a une case désactivée : on ne passe jamais ici pour elle.
+        if (isChecked(checks, key)) return;
+        // Le tap met en attente, ou annule l'attente. Rien n'est enregistré.
         if (input.checked) pendingKeys.add(key); else pendingKeys.delete(key);
         render();
       });
