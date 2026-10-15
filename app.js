@@ -53,6 +53,11 @@ const navSettings = document.getElementById("nav-settings");
 let currentView = "main";
 let unsortedOpen = false; // bandeau « À trier » déplié ?
 let openGroups = null; // accordéons ouverts (clés q2/q3/q4) ; null = défaut (1er non vide)
+// Bande de routine : un seul élément, gardé d'un rendu à l'autre. Si on le
+// recréait vide à chaque rendu, l'écran raccourcirait d'une centaine de px le
+// temps que la routine soit relue, et le contenu « sauterait » vers le haut.
+const routineHost = document.createElement("div");
+routineHost.id = "routine-block";
 const openRows = new Set(); // tâches dont le panneau d'options est déplié
 let wasSignedIn = null; // sentinel: forces the first auth event through
 let routineLocalDate = null; // the local day the routine screen is currently showing
@@ -350,9 +355,20 @@ async function renderMainView() {
   const isGroupOpen = (group, index) => (openGroups ? openGroups.has(group.key) : index === defaultOpen);
   const nothingSorted = priority.length === 0 && groups.every((g) => g.tasks.length === 0);
 
+  // Un rendu reconstruit tout l'écran : on retient où on en était (défilement,
+  // élément ayant le focus) pour que cocher une tâche ne bouge rien.
+  const keepPosition = mainView.dataset.view === "main";
+  const scrollTop = mainView.scrollTop;
+  const focused = document.activeElement;
+  const focusedRow = keepPosition && mainView.contains(focused) ? focused.closest(".task-row[data-id]") : null;
+  const focusedSelector = focusedRow && focused.className
+    ? `.task-row[data-id="${focusedRow.dataset.id}"] .${String(focused.className).split(" ")[0]}`
+    : null;
+
   setHeader("Aujourd'hui");
+  mainView.dataset.view = "main";
   mainView.innerHTML = `
-    <div id="routine-block"></div>
+    <div id="routine-slot"></div>
 
     ${priority.length ? `
       <section class="priority-card">
@@ -401,7 +417,14 @@ async function renderMainView() {
   });
 
   wireTaskRows(mainView);
-  mountRoutineBlock(document.getElementById("routine-block"));
+  mainView.querySelector("#routine-slot").replaceWith(routineHost);
+  // Le contenu précédent reste affiché jusqu'à ce que le nouveau soit prêt.
+  mountRoutineBlock(routineHost);
+
+  if (keepPosition) {
+    mainView.scrollTop = scrollTop;
+    if (focusedSelector) mainView.querySelector(focusedSelector)?.focus({ preventScroll: true });
+  }
 }
 
 async function renderHistoryView() {
@@ -410,6 +433,7 @@ async function renderHistoryView() {
   archived.sort((a, b) => (b.completed_at ?? "").localeCompare(a.completed_at ?? ""));
 
   setHeader("Historique");
+  mainView.dataset.view = "history";
   mainView.innerHTML = `
     ${BACK_BUTTON}
     <div id="history-list">${archived.map(historyRowHtml).join("") || '<p class="empty">Aucune tâche archivée</p>'}</div>
@@ -427,6 +451,7 @@ async function renderSettingsView() {
     settings = await getSettings();
   } catch (_err) {
     setHeader("Réglages");
+    mainView.dataset.view = "settings";
     mainView.innerHTML = `
       ${BACK_BUTTON}
       <p class="empty">Réglages indisponibles hors-ligne — reconnecte-toi au réseau.</p>
@@ -439,6 +464,7 @@ async function renderSettingsView() {
   const subscribed = await hasPushSubscription();
   const notificationsOn = settings.notifications_enabled && subscribed;
   setHeader("Réglages");
+  mainView.dataset.view = "settings";
   mainView.innerHTML = `
     ${BACK_BUTTON}
     <form id="settings-form">
