@@ -6,6 +6,7 @@ import {
   getUnsorted,
   getSorted,
   splitActiveAndArchived,
+  firstNonEmptyIndex,
 } from "./quadrants.js";
 
 function makeTask(overrides) {
@@ -78,4 +79,12 @@ test("splitActiveAndArchived archives only tasks done before today", () => {
   const { active, archived } = splitActiveAndArchived(tasks, "2026-09-05");
   assert.deepEqual(archived.map((t) => t.id), ["a"]);
   assert.deepEqual(active.map((t) => t.id), ["b", "c"]);
+});
+
+test("firstNonEmptyIndex returns the first group that has tasks", () => {
+  assert.equal(firstNonEmptyIndex([[], [makeTask({})], [makeTask({})]]), 1);
+});
+
+test("firstNonEmptyIndex returns -1 when every group is empty", () => {
+  assert.equal(firstNonEmptyIndex([[], [], []]), -1);
 });
