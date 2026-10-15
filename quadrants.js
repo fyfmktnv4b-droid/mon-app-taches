@@ -24,3 +24,9 @@ export function splitActiveAndArchived(tasks, todayDateString) {
   }
   return { active, archived };
 }
+
+// Index du premier groupe non vide (celui qui s'ouvre par défaut dans les
+// accordéons), ou -1 si tous sont vides.
+export function firstNonEmptyIndex(groups) {
+  return groups.findIndex((group) => group.length > 0);
+}

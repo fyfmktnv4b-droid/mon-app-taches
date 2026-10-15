@@ -1,7 +1,7 @@
 import { signUp, signIn, signOut, onAuthStateChange } from "./supabaseClient.js";
 import { loadTasks, captureTasks, updateTag, updateDone, removeTask, updateReminderTime, flushQueue, initSync, loadAllRoutines, loadRoutine, toggleRoutineCheck } from "./sync.js";
 import { clearLocalData } from "./storage.js";
-import { getQuadrant, getPriorityTasks, getUnsorted, getSorted, splitActiveAndArchived } from "./quadrants.js";
+import { getQuadrant, getPriorityTasks, getUnsorted, getSorted, splitActiveAndArchived, firstNonEmptyIndex } from "./quadrants.js";
 import { fullExportJson } from "./export.js";
 import { getSettings, setMorningReminderTime, setNotificationsEnabled } from "./settings.js";
 import { subscribeToPush, unsubscribeFromPush, hasPushSubscription } from "./push.js";
@@ -40,11 +40,20 @@ const signOutButton = document.getElementById("sign-out");
 const exportButton = document.getElementById("export-json");
 const appError = document.getElementById("app-error");
 const mainView = document.getElementById("main-view");
-const navMain = document.getElementById("nav-main");
+const headerDate = document.getElementById("header-date");
+const headerTitle = document.getElementById("header-title");
+const menuToggle = document.getElementById("menu-toggle");
+const menuPanel = document.getElementById("menu-panel");
+const menuScrim = document.getElementById("menu-scrim");
+const captureForm = document.getElementById("capture-form");
+const captureInput = document.getElementById("capture-input");
 const navHistory = document.getElementById("nav-history");
 const navSettings = document.getElementById("nav-settings");
 
 let currentView = "main";
+let unsortedOpen = false; // bandeau « À trier » déplié ?
+let openGroups = null; // accordéons ouverts (clés q2/q3/q4) ; null = défaut (1er non vide)
+const openRows = new Set(); // tâches dont le panneau d'options est déplié
 let wasSignedIn = null; // sentinel: forces the first auth event through
 let routineLocalDate = null; // the local day the routine screen is currently showing
 let routineState = {}; // that day's checks, as last known (server, cache, or optimistic)
@@ -167,6 +176,13 @@ async function maybeShowRoutine() {
   }
 }
 
+// Le champ grandit avec le texte (une tâche par ligne), jusqu'à ~4 lignes,
+// puis défile.
+function fitCaptureInput() {
+  captureInput.style.height = "auto";
+  captureInput.style.height = `${Math.min(captureInput.scrollHeight, 112)}px`;
+}
+
 function showAppError(err) {
   console.error(err);
   appError.textContent = (err && err.message) ? err.message : "Une erreur est survenue.";
@@ -196,15 +212,45 @@ function escapeHtml(str) {
   })[c]);
 }
 
-function taskRowHtml(task) {
+function reminderTime(task) {
+  return task.reminder_time ? task.reminder_time.slice(0, 5) : "";
+}
+
+function tagButtonsHtml(task, withQuestion) {
+  const label = (tag, yes, no, ask) =>
+    task[tag] === true ? yes : task[tag] === false ? no : (withQuestion ? ask : yes);
   return `
-    <div class="task-row" data-id="${task.id}">
-      <input type="checkbox" class="task-done" ${task.done ? "checked" : ""}>
-      <span class="task-text">${escapeHtml(task.text)}</span>
-      <input type="time" class="task-reminder" value="${task.reminder_time ? task.reminder_time.slice(0, 5) : ""}">
-      <button class="task-urgent" data-active="${task.urgent === true}">Urgent</button>
-      <button class="task-important" data-active="${task.important === true}">Important</button>
-      <button class="task-delete">×</button>
+    <button class="task-urgent" data-active="${task.urgent === true}">${label("urgent", "Urgent", "Pas urgent", "Urgent ?")}</button>
+    <button class="task-important" data-active="${task.important === true}">${label("important", "Important", "Pas important", "Important ?")}</button>
+  `;
+}
+
+// variant : "dark" (carte Urgent + Important), "light" (accordéons) ou
+// "unsorted" (liste « À trier », avec ses boutons Urgent ? / Important ?).
+function taskRowHtml(task, variant = "light") {
+  const time = reminderTime(task);
+  const isOpen = openRows.has(task.id);
+  const pill = variant === "dark"
+    ? `<label class="reminder-pill ${time ? "set" : ""}"><span>${time || "+ Rappel"}</span><input type="time" class="task-reminder" value="${time}" aria-label="Heure du rappel"></label>`
+    : "";
+  const reminderField = variant === "dark"
+    ? ""
+    : `<label class="reminder-field">Rappel <input type="time" class="task-reminder" value="${time}"></label>`;
+  return `
+    <div class="task-row task-${variant}" data-id="${task.id}">
+      <div class="task-main">
+        <input type="checkbox" class="task-done" aria-label="Terminée" ${task.done ? "checked" : ""}>
+        <span class="task-text">${escapeHtml(task.text)}</span>
+        ${pill}
+        <button class="task-more" aria-label="Options" aria-expanded="${isOpen}">•••</button>
+      </div>
+      ${variant === "unsorted" ? `<div class="task-sort">${tagButtonsHtml(task, true)}</div>` : ""}
+      <div class="task-actions" ${isOpen ? "" : "hidden"}>
+        ${variant === "unsorted" ? "" : tagButtonsHtml(task, false)}
+        ${reminderField}
+        ${time ? '<button class="task-clear-reminder">Effacer le rappel</button>' : ""}
+        <button class="task-delete">Supprimer</button>
+      </div>
     </div>
   `;
 }
@@ -219,12 +265,19 @@ function historyRowHtml(task) {
   `;
 }
 
-function quadrantHtml(title, tasks, extraClass = "") {
+const ACCORDION_ICON = '<svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+
+function accordionHtml(key, title, tasks, isOpen) {
   return `
-    <div class="quadrant ${extraClass}">
-      <div class="quadrant-title">${title}</div>
-      ${tasks.map(taskRowHtml).join("") || '<p class="empty">Rien ici</p>'}
-    </div>
+    <section class="accordion" data-key="${key}" data-open="${isOpen}">
+      <button class="accordion-toggle" aria-expanded="${isOpen}">
+        <span>${title} <span class="count">· ${tasks.length}</span></span>
+        ${ACCORDION_ICON}
+      </button>
+      <div class="accordion-body" ${isOpen ? "" : "hidden"}>
+        ${tasks.map((t) => taskRowHtml(t, "light")).join("")}
+      </div>
+    </section>
   `;
 }
 
@@ -233,6 +286,19 @@ function wireTaskRows(container) {
     const id = row.dataset.id;
     row.querySelector(".task-done").addEventListener("change", (event) => {
       safely(() => updateDone(id, event.target.checked));
+    });
+    row.querySelector(".task-more").addEventListener("click", (event) => {
+      const actions = row.querySelector(".task-actions");
+      actions.hidden = !actions.hidden;
+      event.currentTarget.setAttribute("aria-expanded", String(!actions.hidden));
+      if (actions.hidden) openRows.delete(id); else openRows.add(id);
+    });
+    row.querySelector(".task-clear-reminder")?.addEventListener("click", () => {
+      safely(() => updateReminderTime(id, null));
+    });
+    row.querySelector(".task-reminder").addEventListener("click", (event) => {
+      // Sur ordinateur, ouvre le sélecteur d'heure au clic sur la pastille.
+      try { event.currentTarget.showPicker?.(); } catch (_err) { /* déjà ouvert */ }
     });
     row.querySelector(".task-urgent").addEventListener("click", () => {
       const active = row.querySelector(".task-urgent").dataset.active === "true";
@@ -243,6 +309,7 @@ function wireTaskRows(container) {
       safely(() => updateTag(id, "important", !active));
     });
     row.querySelector(".task-delete").addEventListener("click", () => {
+      openRows.delete(id);
       safely(() => removeTask(id));
     });
     row.querySelector(".task-reminder").addEventListener("change", (event) => {
@@ -251,43 +318,86 @@ function wireTaskRows(container) {
   });
 }
 
+function formatHeaderDate(date) {
+  const text = date.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function setHeader(title) {
+  headerDate.textContent = formatHeaderDate(new Date());
+  headerTitle.textContent = title;
+  captureForm.hidden = currentView !== "main";
+}
+
+const BACK_BUTTON = '<button type="button" class="back-link" id="back-main">‹ Aujourd\'hui</button>';
+
+function wireBackLink() {
+  document.getElementById("back-main").addEventListener("click", () => showView("main"));
+}
+
 async function renderMainView() {
   const allTasks = await loadTasks();
   const { active } = splitActiveAndArchived(allTasks, todayDateString());
   const unsorted = getUnsorted(active);
   const sorted = getSorted(active);
   const priority = getPriorityTasks(sorted);
-  const q2 = getQuadrant(sorted, false, true);
-  const q3 = getQuadrant(sorted, true, false);
-  const q4 = getQuadrant(sorted, false, false);
+  const groups = [
+    { key: "q2", title: "Important, pas urgent", tasks: getQuadrant(sorted, false, true) },
+    { key: "q3", title: "Urgent, pas important", tasks: getQuadrant(sorted, true, false) },
+    { key: "q4", title: "Ni urgent ni important", tasks: getQuadrant(sorted, false, false) },
+  ];
+  const defaultOpen = firstNonEmptyIndex(groups.map((g) => g.tasks));
+  const isGroupOpen = (group, index) => (openGroups ? openGroups.has(group.key) : index === defaultOpen);
+  const nothingSorted = priority.length === 0 && groups.every((g) => g.tasks.length === 0);
 
+  setHeader("Aujourd'hui");
   mainView.innerHTML = `
-    <form id="capture-form">
-      <textarea id="capture-input" rows="3" placeholder="Une tâche par ligne..."></textarea>
-      <button type="submit">Ajouter</button>
-    </form>
-
     <div id="routine-block"></div>
 
-    <h2>À trier (${unsorted.length})</h2>
-    <div id="unsorted-list">${unsorted.map(taskRowHtml).join("") || '<p class="empty">Rien à trier</p>'}</div>
+    ${priority.length ? `
+      <section class="priority-card">
+        <div class="priority-head"><span>Urgent + Important</span><span>${priority.length}</span></div>
+        ${priority.map((t) => taskRowHtml(t, "dark")).join("")}
+      </section>` : ""}
 
-    <h2>★ Priorités du jour</h2>
-    <div id="priority-list">${priority.map(taskRowHtml).join("") || '<p class="empty">Aucune priorité pour l’instant</p>'}</div>
+    ${unsorted.length ? `
+      <section class="unsorted-banner" data-open="${unsortedOpen}">
+        <button class="unsorted-toggle" aria-expanded="${unsortedOpen}">
+          <span class="unsorted-title">${unsorted.length} ${unsorted.length > 1 ? "tâches" : "tâche"} à trier</span>
+          <span class="unsorted-cta">Trier <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span>
+        </button>
+        <div class="unsorted-list" ${unsortedOpen ? "" : "hidden"}>
+          ${unsorted.map((t) => taskRowHtml(t, "unsorted")).join("")}
+        </div>
+      </section>` : ""}
 
-    <h2>Matrice complète</h2>
-    <div class="matrix">
-      ${quadrantHtml("Urgent + Important", priority, "q1")}
-      ${quadrantHtml("Important, pas urgent", q2)}
-      ${quadrantHtml("Urgent, pas important", q3)}
-      ${quadrantHtml("Ni urgent ni important", q4)}
-    </div>
+    ${groups.map((g, i) => (g.tasks.length ? accordionHtml(g.key, g.title, g.tasks, isGroupOpen(g, i)) : "")).join("")}
+
+    ${nothingSorted ? '<p class="empty empty-all">Rien de trié pour l\'instant</p>' : ""}
   `;
 
-  document.getElementById("capture-form").addEventListener("submit", (event) => {
-    event.preventDefault();
-    const input = document.getElementById("capture-input");
-    safely(() => captureTasks(input.value));
+  mainView.querySelector(".unsorted-toggle")?.addEventListener("click", (event) => {
+    const banner = event.currentTarget.closest(".unsorted-banner");
+    unsortedOpen = !unsortedOpen;
+    banner.dataset.open = String(unsortedOpen);
+    banner.querySelector(".unsorted-list").hidden = !unsortedOpen;
+    event.currentTarget.setAttribute("aria-expanded", String(unsortedOpen));
+  });
+
+  mainView.querySelectorAll(".accordion-toggle").forEach((button) => {
+    button.addEventListener("click", () => {
+      const section = button.closest(".accordion");
+      if (!openGroups) {
+        openGroups = new Set(
+          [...mainView.querySelectorAll(".accordion[data-open='true']")].map((el) => el.dataset.key)
+        );
+      }
+      const nowOpen = section.dataset.open !== "true";
+      section.dataset.open = String(nowOpen);
+      section.querySelector(".accordion-body").hidden = !nowOpen;
+      button.setAttribute("aria-expanded", String(nowOpen));
+      if (nowOpen) openGroups.add(section.dataset.key); else openGroups.delete(section.dataset.key);
+    });
   });
 
   wireTaskRows(mainView);
@@ -299,10 +409,12 @@ async function renderHistoryView() {
   const { archived } = splitActiveAndArchived(allTasks, todayDateString());
   archived.sort((a, b) => (b.completed_at ?? "").localeCompare(a.completed_at ?? ""));
 
+  setHeader("Historique");
   mainView.innerHTML = `
-    <h2>Historique</h2>
+    ${BACK_BUTTON}
     <div id="history-list">${archived.map(historyRowHtml).join("") || '<p class="empty">Aucune tâche archivée</p>'}</div>
   `;
+  wireBackLink();
   // Read-only per spec — no wireTaskRows here.
 }
 
@@ -314,18 +426,21 @@ async function renderSettingsView() {
   try {
     settings = await getSettings();
   } catch (_err) {
+    setHeader("Réglages");
     mainView.innerHTML = `
-      <h2>Réglages</h2>
+      ${BACK_BUTTON}
       <p class="empty">Réglages indisponibles hors-ligne — reconnecte-toi au réseau.</p>
     `;
+    wireBackLink();
     return;
   }
   // The flag is account-wide; the subscription is per-device. Only claim
   // notifications are on when this device is actually subscribed too.
   const subscribed = await hasPushSubscription();
   const notificationsOn = settings.notifications_enabled && subscribed;
+  setHeader("Réglages");
   mainView.innerHTML = `
-    <h2>Réglages</h2>
+    ${BACK_BUTTON}
     <form id="settings-form">
       <label>
         Heure du rappel matinal
@@ -336,6 +451,7 @@ async function renderSettingsView() {
     <button id="toggle-notifications">${notificationsOn ? "Désactiver" : "Activer"} les notifications</button>
   `;
 
+  wireBackLink();
   document.getElementById("settings-form").addEventListener("submit", (event) => {
     event.preventDefault();
     const value = document.getElementById("morning-reminder-time").value;
@@ -400,29 +516,29 @@ routineSkip.addEventListener("click", () => {
   enterApp();
 });
 
-navMain.addEventListener("click", () => {
-  currentView = "main";
-  navMain.dataset.active = "true";
-  navHistory.dataset.active = "false";
-  navSettings.dataset.active = "false";
-  render();
+function setMenuOpen(open) {
+  menuPanel.hidden = !open;
+  menuScrim.hidden = !open;
+  menuToggle.setAttribute("aria-expanded", String(open));
+}
+
+menuToggle.addEventListener("click", () => setMenuOpen(menuPanel.hidden));
+menuScrim.addEventListener("click", () => setMenuOpen(false));
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") setMenuOpen(false);
+});
+// Toute action du menu le referme (la déconnexion / sauvegarde gardent leur handler).
+menuPanel.addEventListener("click", (event) => {
+  if (event.target.closest("button")) setMenuOpen(false);
 });
 
-navHistory.addEventListener("click", () => {
-  currentView = "history";
-  navMain.dataset.active = "false";
-  navHistory.dataset.active = "true";
-  navSettings.dataset.active = "false";
+function showView(view) {
+  currentView = view;
   render();
-});
+}
 
-navSettings.addEventListener("click", () => {
-  currentView = "settings";
-  navMain.dataset.active = "false";
-  navHistory.dataset.active = "false";
-  navSettings.dataset.active = "true";
-  render();
-});
+navHistory.addEventListener("click", () => showView("history"));
+navSettings.addEventListener("click", () => showView("settings"));
 
 authForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -471,6 +587,20 @@ exportButton.addEventListener("click", () => {
     link.click();
     URL.revokeObjectURL(url);
   });
+});
+
+captureInput.addEventListener("input", fitCaptureInput);
+
+captureForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!captureInput.value.trim()) return;
+  clearAppError();
+  await safely(() => captureTasks(captureInput.value));
+  // safely() avale l'erreur et l'affiche : on ne vide le champ que si ça a marché.
+  if (!appError.textContent) {
+    captureInput.value = "";
+    fitCaptureInput();
+  }
 });
 
 onAuthStateChange((session) => {
