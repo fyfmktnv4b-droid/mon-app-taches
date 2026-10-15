@@ -490,7 +490,13 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 .routine-progress { margin-left: auto; display: flex; gap: 6px; }
 .routine-progress i { display: block; width: 24px; height: 8px; border-radius: 4px; background: #CBD3C2; }
 .routine-progress i.on { background: var(--sage-dark); }
-.routine-row { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 4px; }
+.routine-row { display: flex; flex-wrap: wrap; gap: 0 16px; margin-top: 4px; }
+.routine-item { display: flex; align-items: center; gap: 10px; }
+.routine-item.validated .routine-check { color: var(--ink-muted); }
+.routine-validate {
+  min-height: 44px; padding: 0 16px; border-radius: 999px; font-size: 15px; font-weight: 600;
+  background: var(--sage-deep); color: var(--cream);
+}
 .routine-block .routine-check { padding: 0; min-height: 44px; border: 0; background: transparent; gap: 10px; font-size: 17px; }
 .routine-block .routine-check input { width: 26px; height: 26px; }
 .routine-block .routine-check em { font-style: normal; color: var(--ink-muted); }
