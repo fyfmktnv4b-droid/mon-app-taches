@@ -6,6 +6,7 @@ import {
   getUnsorted,
   getSorted,
   splitActiveAndArchived,
+  splitOpenAndDone,
 } from "./quadrants.js";
 
 function makeTask(overrides) {
@@ -64,7 +65,48 @@ test("splitActiveAndArchived archives only tasks done before today", () => {
     makeTask({ id: "b", done: true, completed_at: "2026-09-05T08:00:00Z" }),
     makeTask({ id: "c", done: false, completed_at: null }),
   ];
-  const { active, archived } = splitActiveAndArchived(tasks, "2026-09-05");
+  const { active, archived } = splitActiveAndArchived(tasks, "2026-09-05", "UTC");
   assert.deepEqual(archived.map((t) => t.id), ["a"]);
   assert.deepEqual(active.map((t) => t.id), ["b", "c"]);
+});
+
+test("splitActiveAndArchived uses the local day, not the UTC day", () => {
+  // 2026-09-04T22:30Z = 00:30 le 5 septembre à Paris (UTC+2).
+  const tasks = [makeTask({ id: "a", done: true, completed_at: "2026-09-04T22:30:00Z" })];
+  const paris = splitActiveAndArchived(tasks, "2026-09-05", "Europe/Paris");
+  assert.deepEqual(paris.active.map((t) => t.id), ["a"]);
+  assert.deepEqual(paris.archived, []);
+  // Le même instant, lu en UTC, est « la veille » : archivé.
+  const utc = splitActiveAndArchived(tasks, "2026-09-05", "UTC");
+  assert.deepEqual(utc.archived.map((t) => t.id), ["a"]);
+});
+
+test("a task validated before midnight leaves 'Terminé' once the local day changes", () => {
+  const tasks = [makeTask({ id: "a", done: true, completed_at: "2026-09-05T20:00:00Z" })];
+  const evening = splitActiveAndArchived(tasks, "2026-09-05", "Europe/Paris");
+  assert.deepEqual(splitOpenAndDone(evening.active).done.map((t) => t.id), ["a"]);
+  const nextDay = splitActiveAndArchived(tasks, "2026-09-06", "Europe/Paris");
+  assert.deepEqual(nextDay.active, []);
+  assert.deepEqual(nextDay.archived.map((t) => t.id), ["a"]);
+});
+
+test("splitOpenAndDone puts finished tasks in 'done' whatever their category, newest first", () => {
+  const tasks = [
+    makeTask({ id: "a", important: true }),
+    makeTask({ id: "b", important: false, done: true, completed_at: "2026-09-05T08:00:00Z" }),
+    makeTask({ id: "c", important: null, done: true, completed_at: "2026-09-05T09:00:00Z" }),
+  ];
+  const { open, done } = splitOpenAndDone(tasks);
+  assert.deepEqual(open.map((t) => t.id), ["a"]);
+  assert.deepEqual(done.map((t) => t.id), ["c", "b"]);
+});
+
+test("cancelling a validation sends the task back to its own box", () => {
+  const validated = makeTask({ id: "a", important: false, done: true, completed_at: "2026-09-05T08:00:00Z" });
+  const reopened = { ...validated, done: false, completed_at: null };
+  const { open, done } = splitOpenAndDone([reopened]);
+  assert.deepEqual(done, []);
+  assert.deepEqual(getOthers(open).map((t) => t.id), ["a"]);
+  const unsorted = splitOpenAndDone([{ ...reopened, important: null }]).open;
+  assert.deepEqual(getUnsorted(unsorted).map((t) => t.id), ["a"]);
 });

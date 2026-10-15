@@ -92,6 +92,10 @@
   --ink-muted: #7A6F60;
   --border-warm: #E8DFD0;
   --error: #B84C3D;
+  --done-bg: #E3EAF0;
+  --done-border: #C9D6E0;
+  --done-text: #3E566B;
+  --done-accent: #6B8CA6;
 }
 
 * {
@@ -218,7 +222,15 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
   accent-color: var(--sage-deep);
 }
 .task-text { flex: 1 1 0; min-width: 0; font-size: 16px; line-height: 1.3; overflow-wrap: anywhere; }
-.task-done:checked + .task-text { text-decoration: line-through; opacity: 0.6; }
+/* Brouillon « Validé ? » : à la place de la pastille et de « ••• », qui
+   n'ont plus la place. Une case cochée n'est barrée que dans « Terminé ». */
+.task-row[data-draft] .reminder-pill, .task-row[data-draft] .task-more { display: none; }
+.validate-btn {
+  flex: 0 0 auto; min-height: 44px; padding: 0 16px; border-radius: 999px;
+  font-size: 15px; font-weight: 600; background: var(--sage-deep); color: var(--cream);
+}
+.priority-card .validate-btn { background: var(--cream); color: var(--sage-deep); }
+.priority-card .validate-btn:hover { background: var(--pink-soft); }
 .task-more {
   flex: 0 0 auto; min-width: 44px; padding: 0 6px; background: transparent;
   color: var(--ink-muted); font-size: 15px; letter-spacing: 1px; border-radius: 12px;
@@ -293,6 +305,46 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 #reminder-ok:disabled { background: var(--border-warm); color: var(--ink-muted); cursor: not-allowed; }
 .sheet-danger { background: transparent; color: var(--ink-muted); font-weight: 500; }
 .sheet-danger:hover { background: var(--pink-soft); }
+
+/* Boîte « Terminé » : bleu brume, repliée par défaut. Le texte barré reste à
+   ~90 % de --done-text (≈ 5:1 sur --done-bg) : c'est le trait qui dit
+   « terminé », pas un texte pâle. */
+.done-card { background: var(--done-bg); border: 1px solid var(--done-border); border-radius: 24px; color: var(--done-text); }
+.done-toggle {
+  width: 100%; min-height: 56px; padding: 0 18px 0 22px; display: flex; justify-content: space-between; align-items: center;
+  background: transparent; color: var(--done-text); border-radius: 24px; font-size: 17px; font-weight: 700; text-align: left;
+}
+.done-toggle:hover { background: rgba(107, 140, 166, 0.14); }
+.done-toggle .count { font-weight: 500; }
+.done-toggle .chevron { color: var(--done-accent); transition: transform 0.15s; }
+.done-card[data-open="true"] .done-toggle .chevron { transform: rotate(180deg); }
+.done-body { padding: 0 14px 10px; }
+.done-body[hidden] { display: none; }
+.done-card .task-row + .task-row { border-top: 1px solid var(--done-border); }
+.done-card .task-done {
+  appearance: none; -webkit-appearance: none; cursor: default; opacity: 1; border: 0; border-radius: 7px;
+  background: var(--done-text) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23E3EAF0' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7'/%3E%3C/svg%3E") center / 18px no-repeat;
+}
+.done-card .task-text { text-decoration: line-through; opacity: 0.9; }
+.task-menu-open {
+  flex: 0 0 auto; min-width: 44px; padding: 0 6px; background: transparent;
+  color: var(--done-text); font-size: 15px; letter-spacing: 1px; border-radius: 12px;
+}
+.task-menu-open:hover { background: rgba(107, 140, 166, 0.18); }
+
+/* Menu « ••• » d'une tâche terminée */
+#task-menu-scrim { position: absolute; inset: 0; z-index: 14; background: transparent; }
+#task-menu {
+  position: absolute; z-index: 15; min-width: 220px; padding: 6px; display: flex; flex-direction: column;
+  background: var(--card); border: 1px solid var(--border-warm); border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(59, 50, 41, 0.18);
+}
+#task-menu[hidden], #task-menu-scrim[hidden] { display: none; }
+#task-menu button {
+  min-height: 44px; padding: 0 14px; text-align: left; background: transparent; color: var(--ink);
+  border-radius: 10px; font-size: 15px; font-weight: 500;
+}
+#task-menu button:hover { background: var(--cream); }
 
 /* Bandeau « À trier » */
 .unsorted-banner { background: var(--pink-soft); border-radius: 24px; }

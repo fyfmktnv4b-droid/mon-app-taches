@@ -1,7 +1,7 @@
 import { signUp, signIn, signOut, onAuthStateChange } from "./supabaseClient.js";
 import { loadTasks, captureTasks, updateTag, updateDone, removeTask, updateReminderTime, flushQueue, initSync, loadAllRoutines, loadRoutine, toggleRoutineCheck } from "./sync.js";
 import { clearLocalData } from "./storage.js";
-import { getImportant, getOthers, getUnsorted, getSorted, splitActiveAndArchived } from "./quadrants.js";
+import { getImportant, getOthers, getUnsorted, getSorted, splitActiveAndArchived, splitOpenAndDone } from "./quadrants.js";
 import { fullExportJson } from "./export.js";
 import { getSettings, setMorningReminderTime, setNotificationsEnabled } from "./settings.js";
 import { subscribeToPush, unsubscribeFromPush, hasPushSubscription } from "./push.js";
@@ -57,7 +57,11 @@ let unsortedOpen = false; // bandeau « À trier » déplié ?
 // temps que la routine soit relue, et le contenu « sauterait » vers le haut.
 const routineHost = document.createElement("div");
 routineHost.id = "routine-block";
-const openRows = new Set(); // tâches dont le panneau d'options est déplié
+const openRows = new Set();
+// Cases cochées mais pas encore validées (Important / Autres) : brouillon local,
+// jamais enregistré. « Validé ? » est la seule chose qui écrit done=true.
+const draftDone = new Set();
+let doneOpen = false; // boîte « Terminé » dépliée ? (repliée par défaut) // tâches dont le panneau d'options est déplié
 let wasSignedIn = null; // sentinel: forces the first auth event through
 let routineLocalDate = null; // the local day the routine screen is currently showing
 let routineState = {}; // that day's checks, as last known (server, cache, or optimistic)
@@ -207,7 +211,7 @@ async function safely(fn) {
 }
 
 function todayDateString() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateString();
 }
 
 function escapeHtml(str) {
@@ -229,11 +233,42 @@ function tagButtonsHtml(task) {
   `;
 }
 
-// variant : "dark" (carte Urgent + Important), "light" (accordéons) ou
-// "unsorted" (liste « À trier », avec ses boutons Urgent ? / Important ?).
+// variant : "dark" (carte Important), "light" (boîte Autres), "unsorted"
+// (liste « À trier » : ni case ni rappel, seulement Important / Autre) ou
+// "done" (boîte Terminé : case verrouillée, menu « ••• »).
 function taskRowHtml(task, variant = "light") {
   const time = reminderTime(task);
   const isOpen = openRows.has(task.id);
+  const text = `<span class="task-text">${escapeHtml(task.text)}</span>`;
+
+  if (variant === "unsorted") {
+    return `
+      <div class="task-row task-unsorted" data-id="${task.id}">
+        <div class="task-main">
+          ${text}
+          <button class="task-more" aria-label="Options" aria-expanded="${isOpen}">•••</button>
+        </div>
+        <div class="task-sort">${tagButtonsHtml(task)}</div>
+        <div class="task-actions" ${isOpen ? "" : "hidden"}>
+          <button class="task-delete">Supprimer</button>
+        </div>
+      </div>
+    `;
+  }
+
+  if (variant === "done") {
+    return `
+      <div class="task-row task-done-row" data-id="${task.id}">
+        <div class="task-main">
+          <input type="checkbox" class="task-done" aria-label="Terminée" checked disabled aria-disabled="true">
+          ${text}
+          <button class="task-menu-open" aria-label="Options" aria-haspopup="menu">•••</button>
+        </div>
+      </div>
+    `;
+  }
+
+  const draft = draftDone.has(task.id);
   const pill = variant === "dark"
     ? `<button class="reminder-pill reminder-open ${time ? "set" : ""}" data-time="${time}" aria-label="Heure du rappel">${time || "+ Rappel"}</button>`
     : "";
@@ -241,16 +276,16 @@ function taskRowHtml(task, variant = "light") {
     ? ""
     : `<button class="reminder-btn reminder-open" data-time="${time}">${time ? `Rappel ${time}` : "+ Rappel"}</button>`;
   return `
-    <div class="task-row task-${variant}" data-id="${task.id}">
+    <div class="task-row task-${variant}" data-id="${task.id}" ${draft ? "data-draft" : ""}>
       <div class="task-main">
-        <input type="checkbox" class="task-done" aria-label="Terminée" ${task.done ? "checked" : ""}>
-        <span class="task-text">${escapeHtml(task.text)}</span>
+        <input type="checkbox" class="task-done" aria-label="Terminée" ${draft ? "checked" : ""}>
+        ${text}
         ${pill}
         <button class="task-more" aria-label="Options" aria-expanded="${isOpen}">•••</button>
+        ${draft ? '<button class="validate-btn">Validé ?</button>' : ""}
       </div>
-      ${variant === "unsorted" ? `<div class="task-sort">${tagButtonsHtml(task)}</div>` : ""}
       <div class="task-actions" ${isOpen ? "" : "hidden"}>
-        ${variant === "unsorted" ? "" : tagButtonsHtml(task)}
+        ${tagButtonsHtml(task)}
         ${reminderField}
         <button class="task-delete">Supprimer</button>
       </div>
@@ -268,33 +303,93 @@ function historyRowHtml(task) {
   `;
 }
 
+function validateTask(id) {
+  draftDone.delete(id);
+  safely(() => updateDone(id, true));
+}
+
 function wireTaskRows(container) {
   container.querySelectorAll(".task-row[data-id]").forEach((row) => {
     const id = row.dataset.id;
-    row.querySelector(".task-done").addEventListener("change", (event) => {
-      safely(() => updateDone(id, event.target.checked));
+    // Case : brouillon local uniquement (DOM seulement, pas de rendu, rien
+    // d'enregistré). Les lignes de « À trier » et « Terminé » n'en ont pas /
+    // l'ont verrouillée.
+    row.querySelector(".task-done:not([disabled])")?.addEventListener("change", (event) => {
+      if (event.target.checked) draftDone.add(id); else draftDone.delete(id);
+      row.toggleAttribute("data-draft", event.target.checked);
+      row.querySelector(".validate-btn")?.remove();
+      if (event.target.checked) {
+        const button = document.createElement("button");
+        button.className = "validate-btn";
+        button.textContent = "Validé ?";
+        button.addEventListener("click", () => validateTask(id));
+        row.querySelector(".task-main").append(button);
+      }
     });
-    row.querySelector(".task-more").addEventListener("click", (event) => {
+    row.querySelector(".validate-btn")?.addEventListener("click", () => validateTask(id));
+    row.querySelector(".task-more")?.addEventListener("click", (event) => {
       const actions = row.querySelector(".task-actions");
       actions.hidden = !actions.hidden;
       event.currentTarget.setAttribute("aria-expanded", String(!actions.hidden));
       if (actions.hidden) openRows.delete(id); else openRows.add(id);
     });
+    row.querySelector(".task-menu-open")?.addEventListener("click", (event) => {
+      openTaskMenu(id, event.currentTarget);
+    });
     row.querySelector(".reminder-open")?.addEventListener("click", (event) => {
       openReminderSheet(id, event.currentTarget.dataset.time);
     });
-    row.querySelector(".task-important").addEventListener("click", () => {
+    row.querySelector(".task-important")?.addEventListener("click", () => {
       safely(() => updateTag(id, "important", true));
     });
-    row.querySelector(".task-other").addEventListener("click", () => {
+    row.querySelector(".task-other")?.addEventListener("click", () => {
       safely(() => updateTag(id, "important", false));
     });
-    row.querySelector(".task-delete").addEventListener("click", () => {
+    row.querySelector(".task-delete")?.addEventListener("click", () => {
       openRows.delete(id);
+      draftDone.delete(id);
       safely(() => removeTask(id));
     });
   });
 }
+
+// Petit menu « ••• » d'une tâche terminée : un seul élément partagé, ouvert et
+// fermé sans aucun rendu de la liste.
+const taskMenu = document.getElementById("task-menu");
+const taskMenuScrim = document.getElementById("task-menu-scrim");
+let taskMenuId = null;
+
+function openTaskMenu(id, anchor) {
+  taskMenuId = id;
+  const appBox = appSection.getBoundingClientRect();
+  const box = anchor.getBoundingClientRect();
+  taskMenuScrim.hidden = false;
+  taskMenu.hidden = false;
+  const height = taskMenu.offsetHeight;
+  const below = box.bottom - appBox.top + 4;
+  const top = below + height > appBox.height ? box.top - appBox.top - height - 4 : below;
+  taskMenu.style.top = `${Math.max(8, top)}px`;
+  taskMenu.style.right = `${Math.max(8, appBox.right - box.right)}px`;
+  taskMenu.querySelector("button").focus({ preventScroll: true });
+}
+
+function closeTaskMenu() {
+  taskMenu.hidden = true;
+  taskMenuScrim.hidden = true;
+  taskMenuId = null;
+}
+
+taskMenuScrim.addEventListener("click", closeTaskMenu);
+document.getElementById("task-undo").addEventListener("click", () => {
+  const id = taskMenuId;
+  closeTaskMenu();
+  if (id) safely(() => updateDone(id, false)); // retourne dans sa boîte d'origine
+});
+document.getElementById("task-remove").addEventListener("click", () => {
+  const id = taskMenuId;
+  closeTaskMenu();
+  if (id) safely(() => removeTask(id));
+});
 
 // Petit dégradé en bas de « À trier » tant qu'il reste de la liste à faire défiler.
 function updateUnsortedFade() {
@@ -324,11 +419,15 @@ function wireBackLink() {
 async function renderMainView() {
   const allTasks = await loadTasks();
   const { active } = splitActiveAndArchived(allTasks, todayDateString());
-  const unsorted = getUnsorted(active);
-  const sorted = getSorted(active);
+  const { open, done } = splitOpenAndDone(active);
+  const unsorted = getUnsorted(open);
+  const sorted = getSorted(open);
   const important = getImportant(sorted);
   const others = getOthers(sorted);
-  const nothingSorted = important.length === 0 && others.length === 0;
+  const nothingSorted = important.length === 0 && others.length === 0 && done.length === 0;
+  // Un brouillon n'a de sens que pour une tâche encore ouverte.
+  const openIds = new Set(open.map((t) => t.id));
+  for (const id of [...draftDone]) if (!openIds.has(id)) draftDone.delete(id);
 
   // Un rendu reconstruit tout l'écran : on retient où on en était (défilement,
   // élément ayant le focus) pour que cocher une tâche ne bouge rien.
@@ -372,6 +471,17 @@ async function renderMainView() {
         ${others.map((t) => taskRowHtml(t, "light")).join("")}
       </section>` : ""}
 
+    ${done.length ? `
+      <section class="done-card" data-open="${doneOpen}">
+        <button class="done-toggle" aria-expanded="${doneOpen}">
+          <span>Terminé <span class="count">· ${done.length}</span></span>
+          <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="done-body" ${doneOpen ? "" : "hidden"}>
+          ${done.map((t) => taskRowHtml(t, "done")).join("")}
+        </div>
+      </section>` : ""}
+
     ${nothingSorted ? '<p class="empty empty-all">Rien de trié pour l\'instant</p>' : ""}
   `;
 
@@ -382,6 +492,14 @@ async function renderMainView() {
     banner.querySelector(".unsorted-wrap").hidden = !unsortedOpen;
     updateUnsortedFade();
     event.currentTarget.setAttribute("aria-expanded", String(unsortedOpen));
+  });
+
+  mainView.querySelector(".done-toggle")?.addEventListener("click", (event) => {
+    const card = event.currentTarget.closest(".done-card");
+    doneOpen = !doneOpen;
+    card.dataset.open = String(doneOpen);
+    card.querySelector(".done-body").hidden = !doneOpen;
+    event.currentTarget.setAttribute("aria-expanded", String(doneOpen));
   });
 
   wireTaskRows(mainView);
@@ -568,11 +686,18 @@ function setMenuOpen(open) {
 menuToggle.addEventListener("click", () => setMenuOpen(menuPanel.hidden));
 menuScrim.addEventListener("click", () => setMenuOpen(false));
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") { setMenuOpen(false); closeReminderSheet(); }
+  if (event.key === "Escape") { setMenuOpen(false); closeReminderSheet(); closeTaskMenu(); }
 });
 // Toute action du menu le referme (la déconnexion / sauvegarde gardent leur handler).
 menuPanel.addEventListener("click", (event) => {
   if (event.target.closest("button")) setMenuOpen(false);
+});
+
+// Une app restée ouverte passé minuit ne se met pas à jour toute seule : on
+// redessine au retour au premier plan, ce qui sort les tâches d'hier de
+// « Terminé » (elles passent dans l'Historique).
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && !appSection.hidden) render();
 });
 
 function showView(view) {
