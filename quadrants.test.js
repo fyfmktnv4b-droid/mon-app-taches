@@ -1,12 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  getQuadrant,
-  getPriorityTasks,
+  getImportant,
+  getOthers,
   getUnsorted,
   getSorted,
   splitActiveAndArchived,
-  firstNonEmptyIndex,
 } from "./quadrants.js";
 
 function makeTask(overrides) {
@@ -17,51 +16,40 @@ function makeTask(overrides) {
   };
 }
 
-test("getQuadrant filters by exact urgent/important combination", () => {
+test("getImportant and getOthers split on the important flag only", () => {
+  const tasks = [
+    makeTask({ id: "a", important: true }),
+    makeTask({ id: "b", important: false }),
+    makeTask({ id: "c", important: null }),
+  ];
+  assert.deepEqual(getImportant(tasks).map((t) => t.id), ["a"]);
+  assert.deepEqual(getOthers(tasks).map((t) => t.id), ["b"]);
+});
+
+test("the urgent column is ignored whatever its value", () => {
   const tasks = [
     makeTask({ id: "a", urgent: true, important: true }),
-    makeTask({ id: "b", urgent: true, important: false }),
-    makeTask({ id: "c", urgent: false, important: true }),
-    makeTask({ id: "d", urgent: false, important: false }),
+    makeTask({ id: "b", urgent: false, important: true }),
+    makeTask({ id: "c", urgent: true, important: false }),
+    makeTask({ id: "d", urgent: null, important: false }),
   ];
-  assert.deepEqual(getQuadrant(tasks, true, true).map((t) => t.id), ["a"]);
-  assert.deepEqual(getQuadrant(tasks, true, false).map((t) => t.id), ["b"]);
-  assert.deepEqual(getQuadrant(tasks, false, true).map((t) => t.id), ["c"]);
-  assert.deepEqual(getQuadrant(tasks, false, false).map((t) => t.id), ["d"]);
+  assert.deepEqual(getImportant(tasks).map((t) => t.id), ["a", "b"]);
+  assert.deepEqual(getOthers(tasks).map((t) => t.id), ["c", "d"]);
 });
 
-test("getQuadrant excludes unsorted tasks (null tags) from every quadrant", () => {
-  const tasks = [makeTask({ id: "a", urgent: null, important: true })];
-  assert.deepEqual(getQuadrant(tasks, true, true), []);
-  assert.deepEqual(getQuadrant(tasks, false, true), []);
-});
-
-test("getPriorityTasks returns only urgent+important tasks, no truncation or padding", () => {
-  const tasks = [
-    makeTask({ id: "a", urgent: true, important: true }),
-    makeTask({ id: "b", urgent: true, important: true }),
-    makeTask({ id: "c", urgent: true, important: true }),
-    makeTask({ id: "d", urgent: true, important: true }),
-    makeTask({ id: "e", urgent: false, important: true }),
-  ];
-  assert.equal(getPriorityTasks(tasks).length, 4);
-});
-
-test("getUnsorted returns tasks missing either tag", () => {
-  const tasks = [
-    makeTask({ id: "a", urgent: null, important: null }),
-    makeTask({ id: "b", urgent: true, important: null }),
-    makeTask({ id: "c", urgent: true, important: true }),
-  ];
-  assert.deepEqual(getUnsorted(tasks).map((t) => t.id), ["a", "b"]);
+test("an urgent task that was never classified as important stays in 'à trier'", () => {
+  const tasks = [makeTask({ id: "a", urgent: true, important: null })];
+  assert.deepEqual(getUnsorted(tasks).map((t) => t.id), ["a"]);
+  assert.deepEqual(getImportant(tasks), []);
+  assert.deepEqual(getOthers(tasks), []);
 });
 
 test("getSorted and getUnsorted partition the task list with no overlap", () => {
   const tasks = [
-    makeTask({ id: "a", urgent: null, important: null }),
+    makeTask({ id: "a", important: null }),
     makeTask({ id: "b", urgent: true, important: null }),
-    makeTask({ id: "c", urgent: true, important: true }),
-    makeTask({ id: "d", urgent: false, important: false }),
+    makeTask({ id: "c", important: true }),
+    makeTask({ id: "d", important: false }),
   ];
   const sorted = getSorted(tasks);
   const unsorted = getUnsorted(tasks);
@@ -79,12 +67,4 @@ test("splitActiveAndArchived archives only tasks done before today", () => {
   const { active, archived } = splitActiveAndArchived(tasks, "2026-09-05");
   assert.deepEqual(archived.map((t) => t.id), ["a"]);
   assert.deepEqual(active.map((t) => t.id), ["b", "c"]);
-});
-
-test("firstNonEmptyIndex returns the first group that has tasks", () => {
-  assert.equal(firstNonEmptyIndex([[], [makeTask({})], [makeTask({})]]), 1);
-});
-
-test("firstNonEmptyIndex returns -1 when every group is empty", () => {
-  assert.equal(firstNonEmptyIndex([[], [], []]), -1);
 });
