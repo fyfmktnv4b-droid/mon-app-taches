@@ -371,6 +371,10 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 }
 .unsorted-fade[data-visible="true"] { opacity: 1; }
 .unsorted-list .task-row + .task-row { border-top: 1px solid rgba(59, 50, 41, 0.12); }
+/* Même bouton « Supprimer » que dans « Autres » : sur le fond rose, il lui faut
+   le fond crème de la boîte Autres pour que sa bordure reste visible. */
+.unsorted-list .task-delete { background: var(--cream); }
+.unsorted-list .task-delete:hover { background: var(--card); }
 .unsorted-list .task-other, .unsorted-list .task-important { background: rgba(255, 255, 255, 0.55); }
 .unsorted-list .task-other[data-active="true"], .unsorted-list .task-important[data-active="true"] { background: var(--sage-deep); }
 
