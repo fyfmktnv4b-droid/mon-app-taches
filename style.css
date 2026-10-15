@@ -485,7 +485,8 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 .routine-progress i.on { background: var(--sage-dark); }
 .routine-row { display: flex; flex-wrap: wrap; gap: 0 16px; margin-top: 4px; }
 .routine-item { display: flex; align-items: center; gap: 10px; }
-.routine-item.validated .routine-check { color: var(--ink-muted); }
+.routine-item.validated .routine-check { color: var(--ink-muted); cursor: default; }
+.routine-item.validated input { cursor: default; }
 .routine-validate {
   min-height: 44px; padding: 0 16px; border-radius: 999px; font-size: 15px; font-weight: 600;
   background: var(--sage-deep); color: var(--cream);
