@@ -4,7 +4,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3";
-import { localParts, isDueNow } from "./reminderLogic.js";
+import { localParts, isDueNow, cronGuard } from "./reminderLogic.js";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -52,9 +52,10 @@ async function sendPushToUser(userId: string, payload: Record<string, string>): 
 Deno.serve(async (req) => {
   // Protège l'invocation au-delà de la clé anon (publique, visible dans le
   // bundle client) : seul l'appel pg_cron connaît ce secret.
-  const cronSecret = Deno.env.get("CRON_SECRET");
-  if (cronSecret && req.headers.get("x-cron-secret") !== cronSecret) {
-    return new Response("unauthorized", { status: 401 });
+  const refusal = await cronGuard(Deno.env.get("CRON_SECRET"), req.headers.get("x-cron-secret"));
+  if (refusal) {
+    if (refusal.status === 500) console.error(refusal.body);
+    return new Response(refusal.body, { status: refusal.status });
   }
 
   const now = new Date();
@@ -74,28 +75,35 @@ Deno.serve(async (req) => {
   }
 
   // Rappels matinaux (récurrents, une fois par jour civil LOCAL par utilisateur).
+  // Chaque utilisateur (et plus bas chaque tâche) dans son propre try/catch :
+  // une donnée invalide (ex. fuseau inconnu, qui fait lever Intl) ne doit
+  // bloquer que cette ligne, pas les rappels de tous les autres.
   for (const s of settings ?? []) {
-    if (!s.notifications_enabled) continue;
-    if (!isDueNow(s.morning_reminder_time, s.timezone, now)) continue;
+    try {
+      if (!s.notifications_enabled) continue;
+      if (!isDueNow(s.morning_reminder_time, s.timezone, now)) continue;
 
-    const { dateKey: localToday } = localParts(s.timezone, now);
+      const { dateKey: localToday } = localParts(s.timezone, now);
 
-    // Claim atomique avant envoi : n'envoie que si pas déjà marqué pour ce
-    // jour local, et évite le double-envoi si deux invocations du cron se
-    // chevauchent.
-    const { data: claimed } = await supabase
-      .from("user_settings")
-      .update({ last_morning_reminder_sent_date: localToday })
-      .eq("user_id", s.user_id)
-      .or(`last_morning_reminder_sent_date.is.null,last_morning_reminder_sent_date.neq.${localToday}`)
-      .select("user_id");
-    if (!claimed || claimed.length === 0) continue;
+      // Claim atomique avant envoi : n'envoie que si pas déjà marqué pour ce
+      // jour local, et évite le double-envoi si deux invocations du cron se
+      // chevauchent.
+      const { data: claimed } = await supabase
+        .from("user_settings")
+        .update({ last_morning_reminder_sent_date: localToday })
+        .eq("user_id", s.user_id)
+        .or(`last_morning_reminder_sent_date.is.null,last_morning_reminder_sent_date.neq.${localToday}`)
+        .select("user_id");
+      if (!claimed || claimed.length === 0) continue;
 
-    const ok = await sendPushToUser(s.user_id, {
-      title: "Tes priorités du jour",
-      body: "Il est temps de consigner tes tâches !",
-    });
-    if (!ok) console.error(`morning reminder push failed for user ${s.user_id}`);
+      const ok = await sendPushToUser(s.user_id, {
+        title: "Tes priorités du jour",
+        body: "Il est temps de consigner tes tâches !",
+      });
+      if (!ok) console.error(`morning reminder push failed for user ${s.user_id}`);
+    } catch (err) {
+      console.error(`morning reminder skipped for user ${s.user_id}:`, err);
+    }
   }
 
   // Rappels par tâche (ponctuels), uniquement pour les utilisateurs ayant
@@ -107,22 +115,26 @@ Deno.serve(async (req) => {
     .not("reminder_time", "is", null);
 
   for (const t of tasks ?? []) {
-    if (!enabledUsers.has(t.user_id)) continue;
-    const timezone = tzByUser.get(t.user_id) ?? "Europe/Paris";
-    if (!isDueNow(t.reminder_time, timezone, now)) continue;
+    try {
+      if (!enabledUsers.has(t.user_id)) continue;
+      const timezone = tzByUser.get(t.user_id) ?? "Europe/Paris";
+      if (!isDueNow(t.reminder_time, timezone, now)) continue;
 
-    // Claim atomique : ne remet à null (et donc n'envoie) que si la valeur
-    // n'a pas déjà été réclamée par une autre invocation en chevauchement.
-    const { data: claimed } = await supabase
-      .from("tasks")
-      .update({ reminder_time: null })
-      .eq("id", t.id)
-      .eq("reminder_time", t.reminder_time)
-      .select("id");
-    if (!claimed || claimed.length === 0) continue;
+      // Claim atomique : ne remet à null (et donc n'envoie) que si la valeur
+      // n'a pas déjà été réclamée par une autre invocation en chevauchement.
+      const { data: claimed } = await supabase
+        .from("tasks")
+        .update({ reminder_time: null })
+        .eq("id", t.id)
+        .eq("reminder_time", t.reminder_time)
+        .select("id");
+      if (!claimed || claimed.length === 0) continue;
 
-    const ok = await sendPushToUser(t.user_id, { title: "Rappel", body: t.text });
-    if (!ok) console.error(`task reminder push failed for task ${t.id}`);
+      const ok = await sendPushToUser(t.user_id, { title: "Rappel", body: t.text });
+      if (!ok) console.error(`task reminder push failed for task ${t.id}`);
+    } catch (err) {
+      console.error(`task reminder skipped for task ${t.id}:`, err);
+    }
   }
 
   return new Response("ok");
