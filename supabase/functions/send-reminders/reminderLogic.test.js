@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { localParts, isDueNow } from "./reminderLogic.js";
+import { localParts, isDueNow, cronGuard, secretsMatch } from "./reminderLogic.js";
 
 test("localParts extracts local date and minutes-of-day for a given timezone", () => {
   // 2026-09-12T07:05:00Z is 09:05 in Europe/Paris (UTC+2 in September, DST).
@@ -49,4 +49,37 @@ test("isDueNow respects a custom windowMinutes", () => {
   const now = new Date("2026-09-12T07:08:00Z"); // 09:08 Europe/Paris
   assert.equal(isDueNow("09:00", "Europe/Paris", now, 10), true);
   assert.equal(isDueNow("09:00", "Europe/Paris", now, 5), false);
+});
+
+test("cronGuard refuses everything when CRON_SECRET is not configured (fail closed)", async () => {
+  for (const provided of [null, "", "anything"]) {
+    const r = await cronGuard(undefined, provided);
+    assert.equal(r.status, 500);
+    assert.match(r.body, /CRON_SECRET manquant/);
+  }
+  assert.equal((await cronGuard("", "")).status, 500);
+});
+
+test("cronGuard rejects a missing or wrong x-cron-secret with 401", async () => {
+  assert.equal((await cronGuard("s3cret", null)).status, 401);
+  assert.equal((await cronGuard("s3cret", "")).status, 401);
+  assert.equal((await cronGuard("s3cret", "s3cre")).status, 401);
+  assert.equal((await cronGuard("s3cret", "s3cret ")).status, 401);
+  const r = await cronGuard("s3cret", "nope");
+  assert.match(r.body, /^send-reminders : unauthorized/);
+});
+
+test("cronGuard lets the right secret through", async () => {
+  assert.equal(await cronGuard("s3cret", "s3cret"), null);
+});
+
+test("secretsMatch compares whole values, whatever their length", async () => {
+  assert.equal(await secretsMatch("abc", "abc"), true);
+  assert.equal(await secretsMatch("abc", "abd"), false);
+  assert.equal(await secretsMatch("abc", "abcd"), false);
+  assert.equal(await secretsMatch("é", "é"), true);
+});
+
+test("localParts throws on an unknown timezone (why each user is isolated in send-reminders)", () => {
+  assert.throws(() => localParts("Mars/Olympus", new Date()), RangeError);
 });
