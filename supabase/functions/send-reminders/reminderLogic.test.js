@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { localParts, isDueNow, cronGuard, secretsMatch } from "./reminderLogic.js";
+import { localParts, isDueNow, cronGuard, secretsMatch, vapidSubjectProblem } from "./reminderLogic.js";
 
 test("localParts extracts local date and minutes-of-day for a given timezone", () => {
   // 2026-09-12T07:05:00Z is 09:05 in Europe/Paris (UTC+2 in September, DST).
@@ -82,4 +82,17 @@ test("secretsMatch compares whole values, whatever their length", async () => {
 
 test("localParts throws on an unknown timezone (why each user is isolated in send-reminders)", () => {
   assert.throws(() => localParts("Mars/Olympus", new Date()), RangeError);
+});
+
+test("vapidSubjectProblem accepts mailto: and https: subjects", () => {
+  assert.equal(vapidSubjectProblem("mailto:rappels@example.org"), null);
+  assert.equal(vapidSubjectProblem("https://example.org/contact"), null);
+});
+
+test("vapidSubjectProblem explains a missing or malformed subject", () => {
+  assert.match(vapidSubjectProblem(undefined), /VAPID_SUBJECT manquant/);
+  assert.match(vapidSubjectProblem(""), /VAPID_SUBJECT manquant/);
+  for (const bad of ["rappels@example.org", "mailto:", "mailto:pas-une-adresse", "mailto: a@b.org", "mailto:<a@b.org>", "http://example.org"]) {
+    assert.match(vapidSubjectProblem(bad), /VAPID_SUBJECT invalide/, bad);
+  }
 });
