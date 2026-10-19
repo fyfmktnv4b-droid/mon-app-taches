@@ -2,8 +2,11 @@
 // notifications dans docs/superpowers/specs/2026-09-04-mon-app-taches-design.md).
 // Envoie les rappels matinaux et les rappels par tâche dus, via Web Push.
 
-import { createClient } from "npm:@supabase/supabase-js@2";
-import webpush from "npm:web-push@3";
+// Versions exactes : la fonction détient la clé service_role, on ne laisse
+// donc pas un « @2 » flottant tirer au déploiement une version publiée la
+// veille (risque de paquet compromis). supabase-js aligné sur vendor/.
+import { createClient } from "npm:@supabase/supabase-js@2.115.0";
+import webpush from "npm:web-push@3.6.7";
 import { localParts, isDueNow, cronGuard } from "./reminderLogic.js";
 
 const supabase = createClient(
