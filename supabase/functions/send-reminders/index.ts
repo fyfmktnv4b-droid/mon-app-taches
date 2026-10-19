@@ -7,17 +7,11 @@
 // veille (risque de paquet compromis). supabase-js aligné sur vendor/.
 import { createClient } from "npm:@supabase/supabase-js@2.115.0";
 import webpush from "npm:web-push@3.6.7";
-import { localParts, isDueNow, cronGuard } from "./reminderLogic.js";
+import { localParts, isDueNow, cronGuard, vapidSubjectProblem } from "./reminderLogic.js";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-);
-
-webpush.setVapidDetails(
-  "mailto:contact@example.com",
-  Deno.env.get("VAPID_PUBLIC_KEY")!,
-  Deno.env.get("VAPID_PRIVATE_KEY")!,
 );
 
 // Envoie à tous les appareils de l'utilisateur. Retourne false si au moins un
@@ -60,6 +54,21 @@ Deno.serve(async (req) => {
     if (refusal.status === 500) console.error(refusal.body);
     return new Response(refusal.body, { status: refusal.status });
   }
+
+  // Adresse de contact VAPID lue depuis un secret serveur (le dépôt est
+  // public). Vérifiée ici plutôt qu'au chargement du module : une exception
+  // au chargement ferait échouer chaque appel sans aucun message lisible.
+  const vapidSubject = Deno.env.get("VAPID_SUBJECT");
+  const subjectProblem = vapidSubjectProblem(vapidSubject);
+  if (subjectProblem) {
+    console.error(subjectProblem);
+    return new Response(subjectProblem, { status: 500 });
+  }
+  webpush.setVapidDetails(
+    vapidSubject!,
+    Deno.env.get("VAPID_PUBLIC_KEY")!,
+    Deno.env.get("VAPID_PRIVATE_KEY")!,
+  );
 
   const now = new Date();
 

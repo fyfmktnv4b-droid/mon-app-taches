@@ -57,3 +57,12 @@ async function sha256(text) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return new Uint8Array(digest);
 }
+
+// VAPID_SUBJECT doit être « mailto:adresse@domaine » (ou une URL https:),
+// sinon web-push lève une exception. Retourne null si la valeur convient,
+// sinon un message d'erreur explicite.
+export function vapidSubjectProblem(value) {
+  if (!value) return "send-reminders : VAPID_SUBJECT manquant côté serveur (attendu : mailto:adresse@domaine)";
+  if (/^mailto:[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(value) || /^https:\/\/\S+$/.test(value)) return null;
+  return "send-reminders : VAPID_SUBJECT invalide (attendu : mailto:adresse@domaine, sans espace ni chevrons)";
+}
