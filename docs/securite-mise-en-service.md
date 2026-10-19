@@ -205,8 +205,13 @@ Procédure :
 2. Terminal : générer le nouveau secret directement dans le presse-papiers
    (il ne s'affiche pas) :
    ```
-   openssl rand -hex 24 | pbcopy
+   openssl rand -hex 24 | tr -d '\n' | pbcopy
    ```
+   `tr -d '\n'` retire le retour à la ligne invisible qu'`openssl` ajoute à
+   la fin : collé dans la requête SQL, il ferait partie du secret envoyé par
+   la tâche pg_cron, qui serait refusée (401), alors que le test `curl` de
+   l'étape 6 passerait quand même (`$(pbpaste)` supprime ce retour à la
+   ligne) et ne révélerait donc rien.
 3. Edge Functions → Secrets → `CRON_SECRET` → modifier → Cmd+V → enregistrer.
 4. Dans la requête SQL, sélectionner `<COLLER ICI>` (sans les apostrophes),
    Cmd+V, **Run**. Ne pas enregistrer cette requête comme favori.
@@ -221,7 +226,18 @@ Procédure :
      -H "Authorization: Bearer sb_publishable_c5F4xEjo1Gdg2tnTz-EUww_VzYzrLfW" \
      -H "x-cron-secret: $(pbpaste)"
    ```
-7. Vider le presse-papiers en copiant autre chose.
+7. Vérifier le vrai chemin (pg_cron → fonction), que le `curl` ne teste
+   pas : attendre deux minutes, puis lancer dans le SQL Editor :
+   ```sql
+   select status_code, created from net._http_response order by created desc limit 5;
+   ```
+   Attendu : `200` sur les lignes les plus récentes, pas `401`. Un `401`
+   veut dire que le secret de la tâche et celui de la fonction diffèrent :
+   refaire les étapes 2 à 4.
+8. Supprimer, dans le SQL Editor, la requête qui contient le secret : dans
+   la liste des requêtes enregistrées (si elle y figure) et dans l'onglet
+   **History**.
+9. Vider le presse-papiers en copiant autre chose.
 
 Une ou deux minutes de rappels « manqués » pendant le changement sont
 rattrapées : la fenêtre d'envoi est de 5 minutes.
