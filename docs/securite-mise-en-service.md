@@ -140,9 +140,19 @@ s'arrêteraient sans message.
 
 ## Étape 6 — Mise à jour de l'app (après accord pour le push GitHub)
 
+Avant la publication, compter les tâches terminées sans date (lecture
+seule) : elles passeront de « Terminé » à l'Historique avec la nouvelle
+version.
+
+```
+pbcopy < supabase/checks/done_without_date.sql
+```
+
+Coller dans le SQL Editor, **Run**. Le plus probable : `0`.
+
 Sur iPhone, dans l'app installée sur l'écran d'accueil (pas seulement Safari) :
 
-- Fermer complètement l'app et la rouvrir, deux fois (nouvelle version v25).
+- Fermer complètement l'app et la rouvrir, deux fois (nouvelle version v26).
 - Toujours connecté ; les tâches s'affichent.
 - Ajouter une tâche ; la cocher puis « Validé ? » → elle passe dans
   « Terminé », avec la coche blanche visible dans la case.

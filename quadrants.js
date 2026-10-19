@@ -29,7 +29,10 @@ export function splitActiveAndArchived(tasks, todayDateString, timeZone = device
     const completedDate = task.completed_at
       ? localDateString(new Date(task.completed_at), timeZone)
       : null;
-    const isOldCompleted = task.done && completedDate !== null && completedDate < todayDateString;
+    // Terminée sans date (ligne modifiée à la main en base) : on ne peut pas
+    // dire qu'elle l'a été aujourd'hui, donc Historique plutôt que de rester
+    // indéfiniment dans « Terminé ».
+    const isOldCompleted = task.done && (completedDate === null || completedDate < todayDateString);
     (isOldCompleted ? archived : active).push(task);
   }
   return { active, archived };

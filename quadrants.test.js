@@ -8,6 +8,7 @@ import {
   splitActiveAndArchived,
   splitOpenAndDone,
 } from "./quadrants.js";
+import { localDateString } from "./localDate.js";
 
 function makeTask(overrides) {
   return {
@@ -109,4 +110,39 @@ test("cancelling a validation sends the task back to its own box", () => {
   assert.deepEqual(getOthers(open).map((t) => t.id), ["a"]);
   const unsorted = splitOpenAndDone([{ ...reopened, important: null }]).open;
   assert.deepEqual(getUnsorted(unsorted).map((t) => t.id), ["a"]);
+});
+
+// Boîte « Terminé » de bout en bout, comme le fait renderMainView :
+// today = localDateString() au moment du rendu, puis splitActiveAndArchived
+// + splitOpenAndDone. Fuseau fixé pour que le test ne dépende pas du Mac.
+const TZ = "Europe/Paris";
+function doneBoxAt(tasks, nowIso) {
+  const today = localDateString(new Date(nowIso), TZ);
+  const { active, archived } = splitActiveAndArchived(tasks, today, TZ);
+  return { done: splitOpenAndDone(active).done.map((t) => t.id), archived: archived.map((t) => t.id) };
+}
+
+test("boîte Terminé : une tâche validée hier n'y est pas (elle est dans l'Historique)", () => {
+  const tasks = [makeTask({ id: "hier", important: true, done: true, completed_at: "2026-10-18T16:00:00Z" })];
+  assert.deepEqual(doneBoxAt(tasks, "2026-10-19T08:00:00Z"), { done: [], archived: ["hier"] });
+});
+
+test("boîte Terminé : une tâche validée aujourd'hui y est", () => {
+  const tasks = [makeTask({ id: "auj", important: false, done: true, completed_at: "2026-10-19T07:30:00Z" })];
+  assert.deepEqual(doneBoxAt(tasks, "2026-10-19T08:00:00Z"), { done: ["auj"], archived: [] });
+});
+
+test("boîte Terminé : une tâche validée sans date de validation n'y reste pas indéfiniment", () => {
+  // Ne devrait pas arriver (l'app écrit toujours done et completed_at
+  // ensemble), mais une ligne modifiée à la main en base ne doit pas rester
+  // « terminée aujourd'hui » pour toujours : on ne sait pas quand elle l'a été.
+  const tasks = [makeTask({ id: "sans-date", important: true, done: true, completed_at: null })];
+  assert.deepEqual(doneBoxAt(tasks, "2026-10-19T08:00:00Z"), { done: [], archived: ["sans-date"] });
+});
+
+test("boîte Terminé : au changement de jour, app ouverte, le rendu suivant la vide", () => {
+  // Validée à 23h50 heure de Paris (21:50Z) ; rendus à 23h59 puis 00h01.
+  const tasks = [makeTask({ id: "tard", important: true, done: true, completed_at: "2026-10-19T21:50:00Z" })];
+  assert.deepEqual(doneBoxAt(tasks, "2026-10-19T21:59:00Z"), { done: ["tard"], archived: [] });
+  assert.deepEqual(doneBoxAt(tasks, "2026-10-19T22:01:00Z"), { done: [], archived: ["tard"] });
 });
