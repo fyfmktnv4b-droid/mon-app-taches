@@ -2,6 +2,10 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
+  <!-- Politique de sécurité du contenu : seuls les fichiers de l'app et
+       Supabase sont autorisés (aucun script ou style en ligne). Pour la
+       retirer, supprimer cette balise et augmenter CACHE_VERSION. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://ifcrmvuvmirkgdhkkgiv.supabase.co wss://ifcrmvuvmirkgdhkkgiv.supabase.co; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Mes Tâches</title>
   <link rel="stylesheet" href="style.css">
