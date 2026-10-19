@@ -1,6 +1,7 @@
 import { signUp, signIn, signOut, onAuthStateChange } from "./supabaseClient.js";
 import { loadTasks, captureTasks, updateTag, updateDone, removeTask, updateReminderTime, flushQueue, initSync, loadAllRoutines, loadRoutine, toggleRoutineCheck } from "./sync.js";
 import { clearLocalData } from "./storage.js";
+import { MAX_TASK_LENGTH, longestTooLongLine } from "./syncLogic.js";
 import { getImportant, getOthers, getUnsorted, getSorted, splitActiveAndArchived, splitOpenAndDone } from "./quadrants.js";
 import { fullExportJson } from "./export.js";
 import { getSettings, setMorningReminderTime, setNotificationsEnabled } from "./settings.js";
@@ -763,6 +764,12 @@ captureForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!captureInput.value.trim()) return;
   clearAppError();
+  const tooLong = longestTooLongLine(captureInput.value);
+  if (tooLong) {
+    // Le texte reste dans le champ pour pouvoir le raccourcir.
+    showAppError(new Error(`Une tâche ne peut pas dépasser ${MAX_TASK_LENGTH} caractères (une ligne en fait ${tooLong}).`));
+    return;
+  }
   await safely(() => captureTasks(captureInput.value));
   // safely() avale l'erreur et l'affiche : on ne vide le champ que si ça a marché.
   if (!appError.textContent) {

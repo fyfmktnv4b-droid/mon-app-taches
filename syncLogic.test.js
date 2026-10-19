@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyMutation, resolveMutationIds, buildOptimisticTasks } from "./syncLogic.js";
+import { applyMutation, resolveMutationIds, buildOptimisticTasks, longestTooLongLine, MAX_TASK_LENGTH } from "./syncLogic.js";
 
 function makeTask(overrides) {
   return {
@@ -111,4 +111,20 @@ test("resolveMutationIds passes a routine mutation through unchanged", () => {
   const idMap = new Map([["optimistic-1", "server-1"]]);
   const mutation = { type: "routineCheck", localDate: "2026-10-13", key: "pray", value: true };
   assert.equal(resolveMutationIds(mutation, idMap), mutation);
+});
+
+test("longestTooLongLine is 0 when every line fits, including exactly the limit", () => {
+  assert.equal(longestTooLongLine("Acheter du pain\nAppeler Paul"), 0);
+  assert.equal(longestTooLongLine("a".repeat(MAX_TASK_LENGTH)), 0);
+  assert.equal(longestTooLongLine(`  ${"a".repeat(MAX_TASK_LENGTH)}  `), 0); // trimmed like buildOptimisticTasks
+});
+
+test("longestTooLongLine reports the longest line over the limit", () => {
+  const text = `court\n${"a".repeat(1001)}\n${"b".repeat(1500)}`;
+  assert.equal(longestTooLongLine(text), 1500);
+});
+
+test("longestTooLongLine counts characters like Postgres char_length (an emoji is one)", () => {
+  assert.equal(longestTooLongLine("😀".repeat(MAX_TASK_LENGTH)), 0);
+  assert.equal(longestTooLongLine("😀".repeat(MAX_TASK_LENGTH + 1)), MAX_TASK_LENGTH + 1);
 });

@@ -30,6 +30,22 @@ export function resolveMutationIds(mutation, idMap) {
   return { ...mutation, id: idMap.get(mutation.id) };
 }
 
+// Longueur maximale d'un titre, identique à la contrainte tasks_text_length
+// (migration 0003). Vérifiée avant l'envoi : une création refusée par la
+// base resterait sinon en tête de la file hors-ligne et la bloquerait.
+export const MAX_TASK_LENGTH = 1000;
+
+// Longueur (en caractères, comme char_length côté Postgres) de la plus longue
+// ligne qui dépasse MAX_TASK_LENGTH, ou 0 si toutes les lignes conviennent.
+export function longestTooLongLine(rawText) {
+  let longest = 0;
+  for (const line of rawText.split("\n")) {
+    const length = [...line.trim()].length;
+    if (length > MAX_TASK_LENGTH && length > longest) longest = length;
+  }
+  return longest;
+}
+
 export function buildOptimisticTasks(rawText, userId, now = new Date().toISOString()) {
   const lines = rawText.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
   return lines.map((text) => ({
