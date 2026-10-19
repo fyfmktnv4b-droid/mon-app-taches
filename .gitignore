@@ -2,3 +2,9 @@
 .DS_Store
 node_modules/
 supabase/.temp/
+
+# Secrets locaux : ne jamais versionner (le dépôt est public)
+.env
+.env.*
+*.pem
+*.key
