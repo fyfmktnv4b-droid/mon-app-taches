@@ -84,7 +84,8 @@
       <div id="reminder-scrim"></div>
       <div id="reminder-card" role="dialog" aria-label="Heure du rappel">
         <h2>Heure du rappel</h2>
-        <input type="time" id="reminder-input">
+        <input type="time" id="reminder-input" aria-describedby="reminder-error">
+        <p id="reminder-error" role="alert"></p>
         <div class="reminder-actions">
           <button type="button" id="reminder-cancel" class="sheet-secondary">Annuler</button>
           <button type="button" id="reminder-ok" aria-label="Valider">Valider ✓</button>

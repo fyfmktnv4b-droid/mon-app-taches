@@ -9,7 +9,7 @@ import { subscribeToPush, unsubscribeFromPush, hasPushSubscription } from "./pus
 import { pickQuoteForDate } from "./quotes.js";
 import { sceneForDay } from "./dayScenes.js";
 import { mountRoutineBlock } from "./routineBlock.js";
-import { localDateString } from "./localDate.js";
+import { localDateString, reminderTimeProblem, defaultReminderTime, noReminderTimeLeft, REMINDER_NO_TIME_LEFT_MESSAGE } from "./localDate.js";
 import { MORNING_KEYS, MORNING_LABELS, SKIP_KEY, isChecked, isMorningDone, shouldShowRoutine } from "./routineLogic.js";
 
 if ("serviceWorker" in navigator) {
@@ -643,15 +643,23 @@ const reminderSheet = document.getElementById("reminder-sheet");
 const reminderInput = document.getElementById("reminder-input");
 const reminderOk = document.getElementById("reminder-ok");
 const reminderRemove = document.getElementById("reminder-remove");
+const reminderError = document.getElementById("reminder-error");
 let reminderTaskId = null;
 let reminderDraft = "";
 
+// Une heure déjà passée est refusée (voir reminderTimeProblem dans
+// localDate.js) : sans date, le rappel partirait le lendemain sans que l'app le
+// dise. Valable pour la création et la modification, pas pour le rappel
+// matinal des réglages. Sans rappel existant, la molette démarre sur une heure
+// valide (defaultReminderTime), sinon valider sans y toucher serait refusé.
 function openReminderSheet(taskId, currentTime) {
   reminderTaskId = taskId;
-  reminderDraft = currentTime || "09:00";
+  reminderDraft = currentTime || defaultReminderTime() || "23:59";
   reminderInput.value = reminderDraft;
   reminderRemove.hidden = !currentTime;
-  reminderOk.disabled = false;
+  const noTimeLeft = noReminderTimeLeft();
+  reminderError.textContent = noTimeLeft ? REMINDER_NO_TIME_LEFT_MESSAGE : "";
+  reminderOk.disabled = noTimeLeft;
   reminderSheet.hidden = false;
 }
 
@@ -662,11 +670,19 @@ function closeReminderSheet() {
 
 reminderInput.addEventListener("input", () => {
   reminderDraft = reminderInput.value; // brouillon seulement
-  reminderOk.disabled = !reminderDraft;
+  const noTimeLeft = noReminderTimeLeft();
+  reminderError.textContent = noTimeLeft ? REMINDER_NO_TIME_LEFT_MESSAGE : "";
+  reminderOk.disabled = !reminderDraft || noTimeLeft;
 });
 reminderOk.addEventListener("click", () => {
   const id = reminderTaskId;
   const value = reminderDraft;
+  const problem = reminderTimeProblem(value);
+  if (problem) {
+    // La feuille reste ouverte, rien n'est enregistré.
+    reminderError.textContent = problem;
+    return;
+  }
   closeReminderSheet();
   if (id && value) safely(() => updateReminderTime(id, value));
 });
