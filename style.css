@@ -298,6 +298,8 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 }
 #reminder-card h2 { margin: 0; font-size: 18px; font-weight: 800; text-align: center; }
 #reminder-input { align-self: center; min-height: 52px; font-size: 22px; text-align: center; border-radius: 16px; min-width: 160px; }
+#reminder-error { margin: 0; color: var(--error); font-size: 14px; text-align: center; }
+#reminder-error:empty { display: none; }
 .reminder-actions { display: flex; gap: 10px; }
 .reminder-actions button { flex: 1 1 0; border-radius: 999px; font-size: 16px; }
 .sheet-secondary { background: transparent; color: var(--sage-deep); border: 1.5px solid var(--sage); }
