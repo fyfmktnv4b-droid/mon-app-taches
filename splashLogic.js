@@ -4,7 +4,7 @@
 
 // Durée minimale d'affichage : seulement pour que l'écran ne clignote pas
 // lui-même quand la réponse est instantanée.
-export const MIN_SPLASH_MS = 300;
+export const MIN_SPLASH_MS = 1000;
 // Délai de sécurité : sans événement après ce temps, on laisse la place à la
 // connexion plutôt que de rester bloqué.
 export const SPLASH_TIMEOUT_MS = 5000;

@@ -20,14 +20,14 @@ test("an instant answer still keeps the splash for the minimum time", () => {
 
 test("a session goes to the welcome screen, no session to sign-in", () => {
   assert.equal(splashScreen("session", MIN_SPLASH_MS), "welcome");
-  assert.equal(splashScreen("session", 700), "welcome");
+  assert.equal(splashScreen("session", 1500), "welcome");
   assert.equal(splashScreen("none", MIN_SPLASH_MS), "auth");
   assert.equal(splashScreen("none", 4000), "auth");
 });
 
 test("a slow answer is never delayed further", () => {
-  assert.equal(splashScreen("session", 700), "welcome");
-  assert.equal(splashWakeInMs("session", 700), null);
+  assert.equal(splashScreen("session", 1500), "welcome");
+  assert.equal(splashWakeInMs("session", 1500), null);
 });
 
 test("splashWakeInMs gives the time left before the next decision", () => {
