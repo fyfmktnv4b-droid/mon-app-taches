@@ -10,6 +10,7 @@ import { pickQuoteForDate } from "./quotes.js";
 import { sceneForDay } from "./dayScenes.js";
 import { mountRoutineBlock } from "./routineBlock.js";
 import { localDateString, reminderTimeProblem, defaultReminderTime, noReminderTimeLeft, REMINDER_NO_TIME_LEFT_MESSAGE } from "./localDate.js";
+import { splashScreen, splashWakeInMs } from "./splashLogic.js";
 import { MORNING_KEYS, MORNING_LABELS, SKIP_KEY, isChecked, isMorningDone, shouldShowRoutine } from "./routineLogic.js";
 
 if ("serviceWorker" in navigator) {
@@ -18,6 +19,7 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+const splashSection = document.getElementById("splash");
 const authSection = document.getElementById("auth");
 const welcomeSection = document.getElementById("welcome");
 const welcomeDay = document.getElementById("welcome-day");
@@ -67,7 +69,33 @@ let wasSignedIn = null; // sentinel: forces the first auth event through
 let routineLocalDate = null; // the local day the routine screen is currently showing
 let routineState = {}; // that day's checks, as last known (server, cache, or optimistic)
 
+// Écran de chargement du démarrage : visible jusqu'au premier événement
+// d'authentification (voir splashLogic.js), puis remplacé par l'accueil ou la
+// connexion. Le minuteur de sécurité l'empêche de rester bloqué.
+const splashStart = performance.now();
+let splashAuthEvent; // undefined tant qu'aucun événement n'est arrivé
+let splashTimer = null;
+let splashDone = false;
+
+function hideSplash() {
+  splashDone = true;
+  clearTimeout(splashTimer);
+  splashSection.hidden = true;
+  document.documentElement.classList.remove("loading");
+}
+
+function settleSplash() {
+  if (splashDone) return;
+  clearTimeout(splashTimer);
+  const elapsed = performance.now() - splashStart;
+  const screen = splashScreen(splashAuthEvent, elapsed);
+  if (screen === "welcome") showWelcome();
+  else if (screen === "auth") showAuth();
+  else splashTimer = setTimeout(settleSplash, splashWakeInMs(splashAuthEvent, elapsed));
+}
+
 function showWelcome() {
+  hideSplash();
   authSection.hidden = true;
   routineSection.hidden = true;
   appSection.hidden = true;
@@ -116,6 +144,7 @@ async function enterApp() {
 }
 
 function showAuth() {
+  hideSplash();
   welcomeSection.hidden = true;
   routineSection.hidden = true;
   appSection.hidden = true;
@@ -802,14 +831,19 @@ onAuthStateChange((session) => {
   // an expired session offline would otherwise wipe the cache and the unsynced queue.
   const isSignOut = wasSignedIn === true && !nowSignedIn;
   wasSignedIn = nowSignedIn;
-  if (nowSignedIn) {
-    showWelcome();
-  } else {
-    // Best-effort: a clear failure must not block getting back to the auth screen.
-    if (isSignOut) clearLocalData().catch((err) => console.error(err));
-    showAuth();
+  // Best-effort: a clear failure must not block getting back to the auth screen.
+  if (isSignOut) clearLocalData().catch((err) => console.error(err));
+  // Au démarrage, l'écran de chargement garde la main jusqu'à la décision de
+  // splashScreen() ; ensuite chaque événement change d'écran tout de suite.
+  if (!splashDone) {
+    splashAuthEvent = nowSignedIn ? "session" : "none";
+    settleSplash();
+    return;
   }
+  if (nowSignedIn) showWelcome(); else showAuth();
 });
+
+settleSplash();
 
 initSync(() => {
   // Signed out, the RLS-filtered read returns [] rather than an error, which

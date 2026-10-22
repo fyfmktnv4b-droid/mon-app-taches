@@ -37,3 +37,17 @@ test("index.html has no inline script, inline style or inline event handler", ()
   assert.doesNotMatch(html, /\sstyle="/, "style attribute");
   assert.doesNotMatch(html, /\son[a-z]+="/, "inline event handler");
 });
+
+test("the splash screen is the only section visible at startup", () => {
+  assert.match(html, /<html[^>]*\sclass="loading"/, "html.loading missing");
+  assert.match(html, /<section id="splash"(?![^>]*\bhidden\b)[^>]*>/, "splash must be visible by default");
+  for (const id of ["auth", "welcome", "routine", "app"]) {
+    assert.match(html, new RegExp(`<section id="${id}"[^>]*\\bhidden\\b`), `#${id} must be hidden by default`);
+  }
+});
+
+test("the splash shows the app icon and no text", () => {
+  const splash = html.match(/<section id="splash"[^>]*>([\s\S]*?)<\/section>/)[1];
+  assert.match(splash, /<img src="icons\/icon-192\.png" alt="">/);
+  assert.equal(splash.replace(/<img[^>]*>/, "").trim(), "");
+});
