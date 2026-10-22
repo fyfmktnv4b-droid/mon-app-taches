@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" class="loading">
 <head>
   <meta charset="UTF-8">
   <!-- Politique de sécurité du contenu : seuls les fichiers de l'app et
@@ -16,7 +16,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
 </head>
 <body>
-  <section id="auth">
+  <section id="splash" role="status" aria-label="Chargement">
+    <img src="icons/icon-192.png" alt="">
+  </section>
+
+  <section id="auth" hidden>
     <h1>Mes Tâches</h1>
     <form id="auth-form">
       <input type="email" id="auth-email" placeholder="Email" required>

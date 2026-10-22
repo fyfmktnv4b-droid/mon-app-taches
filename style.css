@@ -103,6 +103,19 @@
   font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 body { margin: 0; background: var(--cream); color: var(--ink); }
+/* Écran de chargement du démarrage (voir splashLogic.js). Le fond de la page
+   est aussi vert tant que « loading » est posée, pour qu'aucune bande crème
+   ne reste sur les bords (zones sûres, rebond du défilement). */
+html.loading, html.loading body { background: var(--sage-deep); }
+#splash {
+  position: fixed; inset: 0; z-index: 100;
+  min-height: 100vh; min-height: 100dvh;
+  display: flex; align-items: center; justify-content: center;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: var(--sage-deep);
+}
+#splash[hidden] { display: none; }
+#splash img { width: 120px; height: 120px; border-radius: 22%; display: block; }
 #auth { max-width: 320px; margin: 80px auto; padding: 20px; }
 #auth-form { display: flex; flex-direction: column; gap: 8px; }
 input, button, textarea { padding: 9px 14px; font-size: 14px; font-family: inherit; }
