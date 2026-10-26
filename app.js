@@ -197,6 +197,7 @@ function showRoutineScreen() {
   appSection.hidden = true;
   repriseSection.hidden = true;
   routineSection.hidden = false;
+  routineSkip.disabled = false;
   renderRoutineChecks();
 }
 
@@ -232,13 +233,27 @@ let startupInFlight = null; // évite un double passage sur un double tap
 function enterAfterRoutine() {
   if (repriseOffered) return enterApp();
   if (!startupInFlight) {
+    // Grisés pendant le chargement (jusqu'à 2 s sur un réseau lent).
+    routineContinue.disabled = true;
+    routineSkip.disabled = true;
     startupInFlight = (async () => {
-      const tasks = await loadTasksForReprise();
-      const today = todayDateString();
-      const waiting = pendingReprise(tasks, today, undefined, handledIdsFor(today));
-      repriseOffered = true;
-      if (waiting.length) showReprise(waiting); else await enterApp();
-    })().finally(() => { startupInFlight = null; });
+      try {
+        const tasks = await loadTasksForReprise();
+        const today = todayDateString();
+        const waiting = pendingReprise(tasks, today, undefined, handledIdsFor(today));
+        repriseOffered = true;
+        if (waiting.length) showReprise(waiting); else await enterApp();
+      } catch (err) {
+        // Comme maybeShowRoutine : en cas d'erreur, on entre quand même dans l'app.
+        console.error(err);
+        repriseOffered = true;
+        await enterApp();
+      }
+    })().finally(() => {
+      startupInFlight = null;
+      routineContinue.disabled = !isMorningDone(routineState);
+      routineSkip.disabled = false;
+    });
   }
   return startupInFlight;
 }
@@ -688,11 +703,15 @@ async function render() {
 }
 
 welcomeContinue.addEventListener("click", async () => {
-  // Guards against a double tap while loadRoutine() is in flight (up to the
-  // 2s network timeout in sync.js) — the screen is about to change anyway,
-  // so there's nothing to restore the label to afterwards.
+  // Grisé pendant tout le démarrage (routine puis tâches à reprendre, jusqu'à
+  // 2 s chacune sur un réseau lent) : évite un double tap et montre que ça charge.
   welcomeContinue.disabled = true;
-  await maybeShowRoutine();
+  try {
+    await maybeShowRoutine();
+  } finally {
+    // Jamais bloqué : réactivé même en cas d'erreur (l'écran a changé entre-temps).
+    welcomeContinue.disabled = false;
+  }
 });
 
 routineContinue.addEventListener("click", enterAfterRoutine);
