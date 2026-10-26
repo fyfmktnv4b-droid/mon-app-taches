@@ -2,7 +2,7 @@
 // file listed in ASSETS below. This is what makes the browser notice a
 // new service worker and refresh its cache — there's no build tool here
 // to hash files automatically, so this is a manual, required step.
-const CACHE_VERSION = "v30";
+const CACHE_VERSION = "v31";
 const CACHE_NAME = `mon-app-taches-${CACHE_VERSION}`;
 
 const ASSETS = [
@@ -40,6 +40,8 @@ const ASSETS = [
   "./routines.js",
   "./routineBlock.js",
   "./splashLogic.js",
+  "./repriseLogic.js",
+  "./reprise.js",
   "./fonts/plus-jakarta-sans-latin-400-normal.woff2",
   "./fonts/plus-jakarta-sans-latin-ext-400-normal.woff2",
   "./fonts/plus-jakarta-sans-latin-500-normal.woff2",
