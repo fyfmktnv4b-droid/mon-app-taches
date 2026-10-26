@@ -490,6 +490,8 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
   margin-top: 40px;
   flex-shrink: 0;
 }
+#welcome-continue:disabled { background: var(--border-warm); color: var(--ink-muted); cursor: not-allowed; }
+#routine-skip:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* ---------------------------------------------------------------------
    Morning routine screen, between "Commencer" and the task view. Shown
