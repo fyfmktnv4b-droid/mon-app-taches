@@ -11,6 +11,9 @@ import { sceneForDay } from "./dayScenes.js";
 import { mountRoutineBlock } from "./routineBlock.js";
 import { localDateString, reminderTimeProblem, defaultReminderTime, noReminderTimeLeft, REMINDER_NO_TIME_LEFT_MESSAGE } from "./localDate.js";
 import { splashScreen, splashWakeInMs } from "./splashLogic.js";
+import { pendingReprise, bannerTitle, bannerSubtitle } from "./repriseLogic.js";
+import { loadTasksForReprise } from "./reprise.js";
+import { openRepriseScreen, handledIdsFor, abandonedIds } from "./repriseScreen.js";
 import { MORNING_KEYS, MORNING_LABELS, SKIP_KEY, isChecked, isMorningDone, shouldShowRoutine } from "./routineLogic.js";
 
 if ("serviceWorker" in navigator) {
@@ -34,6 +37,7 @@ const routineContinue = document.getElementById("routine-continue");
 const routineSkip = document.getElementById("routine-skip");
 const openRoutine = document.getElementById("open-routine");
 const appSection = document.getElementById("app");
+const repriseSection = document.getElementById("reprise");
 const authForm = document.getElementById("auth-form");
 const authError = document.getElementById("auth-error");
 const emailInput = document.getElementById("auth-email");
@@ -99,7 +103,9 @@ function showWelcome() {
   authSection.hidden = true;
   routineSection.hidden = true;
   appSection.hidden = true;
+  repriseSection.hidden = true;
   welcomeSection.hidden = false;
+  repriseOffered = false;
   // Reset in case a previous sign-in's click left this disabled (see the
   // welcomeContinue click handler below) — a fresh welcome screen must
   // always start with a usable button.
@@ -133,6 +139,7 @@ async function enterApp() {
   welcomeSection.hidden = true;
   routineSection.hidden = true;
   authSection.hidden = true;
+  repriseSection.hidden = true;
   appSection.hidden = false;
   mainView.innerHTML = "";
   try {
@@ -148,6 +155,7 @@ function showAuth() {
   welcomeSection.hidden = true;
   routineSection.hidden = true;
   appSection.hidden = true;
+  repriseSection.hidden = true;
   authSection.hidden = false;
   mainView.innerHTML = "";
 }
@@ -187,6 +195,7 @@ function showRoutineScreen() {
   welcomeSection.hidden = true;
   authSection.hidden = true;
   appSection.hidden = true;
+  repriseSection.hidden = true;
   routineSection.hidden = false;
   renderRoutineChecks();
 }
@@ -203,15 +212,46 @@ async function maybeShowRoutine() {
     routine = await loadRoutine(routineLocalDate);
   } catch (err) {
     console.error(err);
-    await enterApp();
+    await enterAfterRoutine();
     return;
   }
   routineState = routine.checks ?? {};
   if (shouldShowRoutine(routineState)) {
     showRoutineScreen();
   } else {
-    await enterApp();
+    await enterAfterRoutine();
   }
+}
+
+// « À reprendre aujourd'hui » : proposé automatiquement une seule fois par
+// ouverture de l'app (après la routine), seulement s'il y a des tâches en
+// attente. Ensuite, seul le bandeau de l'écran principal le rouvre.
+let repriseOffered = false;
+let startupInFlight = null; // évite un double passage sur un double tap
+
+function enterAfterRoutine() {
+  if (repriseOffered) return enterApp();
+  if (!startupInFlight) {
+    startupInFlight = (async () => {
+      const tasks = await loadTasksForReprise();
+      const today = todayDateString();
+      const waiting = pendingReprise(tasks, today, undefined, handledIdsFor(today));
+      repriseOffered = true;
+      if (waiting.length) showReprise(waiting); else await enterApp();
+    })().finally(() => { startupInFlight = null; });
+  }
+  return startupInFlight;
+}
+
+function showReprise(tasks) {
+  welcomeSection.hidden = true;
+  routineSection.hidden = true;
+  authSection.hidden = true;
+  appSection.hidden = true;
+  repriseSection.hidden = false;
+  openRepriseScreen(repriseSection, {
+    tasks, today: todayDateString(), dateLabel: formatHeaderDate(new Date()), onExit: enterApp,
+  });
 }
 
 // Le champ grandit avec le texte (une tâche par ligne), jusqu'à ~4 lignes,
@@ -448,8 +488,14 @@ function wireBackLink() {
 
 async function renderMainView() {
   const allTasks = await loadTasks();
-  const { active } = splitActiveAndArchived(allTasks, todayDateString());
-  const { open, done } = splitOpenAndDone(active);
+  const today = todayDateString();
+  const { active } = splitActiveAndArchived(allTasks, today);
+  const { open: allOpen, done } = splitOpenAndDone(active);
+  // Les tâches à reprendre (et les abandons pas encore supprimés) sont cachées
+  // des boîtes : le bandeau rose rappelle qu'elles existent.
+  const waiting = pendingReprise(allOpen, today, undefined, handledIdsFor(today));
+  const hiddenIds = new Set([...waiting.map((t) => t.id), ...abandonedIds]);
+  const open = allOpen.filter((t) => !hiddenIds.has(t.id));
   const unsorted = getUnsorted(open);
   const sorted = getSorted(open);
   const important = getImportant(sorted);
@@ -474,6 +520,15 @@ async function renderMainView() {
   mainView.dataset.view = "main";
   mainView.innerHTML = `
     <div id="routine-slot"></div>
+
+    ${waiting.length ? `
+      <button type="button" class="reprise-banner">
+        <span class="reprise-banner-text">
+          <span class="reprise-banner-title">${bannerTitle(waiting.length)}</span>
+          <span class="reprise-banner-sub">${bannerSubtitle(waiting, today)}</span>
+        </span>
+        <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      </button>` : ""}
 
     ${important.length ? `
       <section class="priority-card">
@@ -512,7 +567,7 @@ async function renderMainView() {
         </div>
       </section>` : ""}
 
-    ${nothingSorted ? '<p class="empty empty-all">Rien de trié pour l\'instant</p>' : ""}
+    ${nothingSorted && !waiting.length ? '<p class="empty empty-all">Rien de trié pour l\'instant</p>' : ""}
   `;
 
   mainView.querySelector(".unsorted-toggle")?.addEventListener("click", (event) => {
@@ -533,6 +588,7 @@ async function renderMainView() {
   });
 
   wireTaskRows(mainView);
+  mainView.querySelector(".reprise-banner")?.addEventListener("click", () => showReprise(waiting));
   mainView.querySelector("#routine-slot").replaceWith(routineHost);
   // Le contenu précédent reste affiché jusqu'à ce que le nouveau soit prêt.
   mountRoutineBlock(routineHost);
@@ -639,7 +695,7 @@ welcomeContinue.addEventListener("click", async () => {
   await maybeShowRoutine();
 });
 
-routineContinue.addEventListener("click", enterApp);
+routineContinue.addEventListener("click", enterAfterRoutine);
 
 // Manual reopen from the task screen: always shows the routine, even if it
 // was completed or skipped today, so a box can still be checked later.
@@ -662,7 +718,7 @@ routineSkip.addEventListener("click", () => {
   // Not awaited: a slow network must not hold the task screen back. The
   // write is queued locally if it fails.
   toggleRoutineCheck(routineLocalDate, SKIP_KEY, true).catch(console.error);
-  enterApp();
+  enterAfterRoutine();
 });
 
 // Feuille « Heure du rappel » : le choix reste un brouillon local tant qu'on

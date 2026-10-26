@@ -41,7 +41,7 @@ test("index.html has no inline script, inline style or inline event handler", ()
 test("the splash screen is the only section visible at startup", () => {
   assert.match(html, /<html[^>]*\sclass="loading"/, "html.loading missing");
   assert.match(html, /<section id="splash"(?![^>]*\bhidden\b)[^>]*>/, "splash must be visible by default");
-  for (const id of ["auth", "welcome", "routine", "app"]) {
+  for (const id of ["auth", "welcome", "routine", "reprise", "app"]) {
     assert.match(html, new RegExp(`<section id="${id}"[^>]*\\bhidden\\b`), `#${id} must be hidden by default`);
   }
 });
