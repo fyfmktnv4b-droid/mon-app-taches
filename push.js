@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient.js";
+import { requireServer } from "./authGate.js";
 
 // Generated once via `npx web-push generate-vapid-keys` for this project.
 // Public key only — safe to ship to the client by design (VAPID's whole
@@ -19,6 +20,7 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 async function requireUser() {
+  requireServer();
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error) throw error;
   if (!user) throw new Error("Session expirée, reconnecte-toi.");
@@ -74,6 +76,9 @@ export async function unsubscribeFromPush() {
   if (!subscription) return;
   const endpoint = subscription.endpoint;
   await subscription.unsubscribe();
+  // Désabonné sur cet appareil dans tous les cas ; la ligne côté serveur
+  // attend que la session soit vérifiée (porte fermée hors-ligne).
+  requireServer();
   const { error } = await supabase.from("push_subscriptions").delete().eq("endpoint", endpoint);
   if (error) throw error;
 }

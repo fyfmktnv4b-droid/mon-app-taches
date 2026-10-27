@@ -7,6 +7,8 @@ import {
 } from "./storage.js";
 import { applyMutation, resolveMutationIds, buildOptimisticTasks } from "./syncLogic.js";
 import { applyRoutineMutation, emptyRoutine } from "./routineLogic.js";
+import { serverAllowed } from "./authGate.js";
+import { offlineUserId } from "./lastUser.js";
 
 export async function loadTasks() {
   try {
@@ -27,6 +29,10 @@ export async function loadTasks() {
 }
 
 async function getCurrentUserId() {
+  // Porte serveur fermée (session pas encore vérifiée, jeton expiré) :
+  // getSession() échouerait ou attendrait ~25 s. Le repère local suffit pour
+  // une tâche mise en file ; le vrai user_id vient du serveur au rejeu.
+  if (!serverAllowed()) return offlineUserId();
   // getSession() reads the persisted session locally and works offline;
   // getUser() re-validates against the server and would fail offline —
   // wrong choice here, since this path only runs when we're already offline.

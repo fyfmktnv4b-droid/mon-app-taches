@@ -1,6 +1,7 @@
 import { signUp, signIn, signOut, onAuthStateChange } from "./supabaseClient.js";
 import { loadTasks, captureTasks, updateTag, updateDone, removeTask, updateReminderTime, flushQueue, initSync, loadAllRoutines, loadRoutine, toggleRoutineCheck } from "./sync.js";
 import { clearLocalData } from "./storage.js";
+import { setServerGate } from "./authGate.js";
 import { MAX_TASK_LENGTH, longestTooLongLine } from "./syncLogic.js";
 import { getImportant, getOthers, getUnsorted, getSorted, splitActiveAndArchived, splitOpenAndDone } from "./quadrants.js";
 import { fullExportJson } from "./export.js";
@@ -906,6 +907,9 @@ onAuthStateChange((session) => {
   // an expired session offline would otherwise wipe the cache and the unsynced queue.
   const isSignOut = wasSignedIn === true && !nowSignedIn;
   wasSignedIn = nowSignedIn;
+  // Provisoire (branchement complet au commit suivant) : porte ouverte dès
+  // que le SDK a une session, comme avant.
+  setServerGate(nowSignedIn);
   // Best-effort: a clear failure must not block getting back to the auth screen.
   if (isSignOut) clearLocalData().catch((err) => console.error(err));
   // Au démarrage, l'écran de chargement garde la main jusqu'à la décision de
