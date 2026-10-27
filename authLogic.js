@@ -93,3 +93,42 @@ export function offlineBannerText(onlineSinceMs, nowMs) {
   if (onlineSinceMs === null || nowMs - onlineSinceMs >= SYNCING_TEXT_MS) return OFFLINE_TEXT;
   return SYNCING_TEXT;
 }
+
+// Clic sur « Se déconnecter ». pendingCount : modifications encore en file
+// (après une tentative d'envoi si la session est vérifiée), null si illisible.
+//   "server"       : déconnexion normale, auprès du serveur
+//   "confirm"      : demander avant de supprimer des modifications non envoyées
+//   "local"        : hors-ligne, rien en attente : déconnexion sur l'appareil
+//   "needsNetwork" : hors-ligne avec des modifications : on refuse, on explique
+// Un nombre inconnu n'est jamais traité comme zéro.
+export function signOutStep(state, pendingCount) {
+  if (state === "verified") return pendingCount === 0 ? "server" : "confirm";
+  return pendingCount === 0 ? "local" : "needsNetwork";
+}
+
+export function signOutSheetText(step, pendingCount) {
+  if (step === "needsNetwork") {
+    const sent = pendingCount === 1 ? "Ta modification sera envoyée"
+      : pendingCount === null ? "Tes modifications seront envoyées"
+      : `Tes ${pendingCount} modifications seront envoyées`;
+    return `La déconnexion demande le réseau. ${sent} à son retour.`;
+  }
+  if (pendingCount === null) {
+    return "Des modifications ne sont peut-être pas encore envoyées. Se déconnecter maintenant les supprimerait.";
+  }
+  if (pendingCount === 1) {
+    return "1 modification n'est pas encore envoyée. Se déconnecter maintenant la supprimera.";
+  }
+  return `${pendingCount} modifications ne sont pas encore envoyées. Se déconnecter maintenant les supprimera.`;
+}
+
+// Clé sous laquelle supabase-js range sa session dans localStorage (même
+// calcul que le SDK, voir vendor/README.md).
+export function authStorageKey(supabaseUrl) {
+  return `sb-${new URL(supabaseUrl).hostname.split(".")[0]}-auth-token`;
+}
+
+// La session et ses compagnons (« -user », « -code-verifier »…).
+export function isSdkAuthKey(key, storageKey) {
+  return key === storageKey || key.startsWith(`${storageKey}-`);
+}

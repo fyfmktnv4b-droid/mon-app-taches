@@ -104,6 +104,15 @@
         <button type="button" id="reminder-remove" class="sheet-danger" hidden>Supprimer le rappel</button>
       </div>
     </div>
+    <!-- Feuille « Se déconnecter » : modifications pas encore envoyées. -->
+    <div id="signout-sheet" hidden>
+      <div id="signout-scrim"></div>
+      <div id="signout-card" role="alertdialog" aria-modal="true" aria-labelledby="signout-text">
+        <p id="signout-text"></p>
+        <button type="button" id="signout-ok">Compris</button>
+        <button type="button" id="signout-anyway" class="sheet-danger" hidden>Me déconnecter quand même</button>
+      </div>
+    </div>
   </section>
 
   <script type="module" src="app.js"></script>
