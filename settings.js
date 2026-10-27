@@ -1,6 +1,8 @@
 import { supabase } from "./supabaseClient.js";
+import { requireServer } from "./authGate.js";
 
 async function requireUser() {
+  requireServer();
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error) throw error;
   if (!user) throw new Error("Session expirée, reconnecte-toi.");

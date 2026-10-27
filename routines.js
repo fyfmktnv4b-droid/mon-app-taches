@@ -1,10 +1,12 @@
 import { supabase } from "./supabaseClient.js";
+import { requireServer } from "./authGate.js";
 
 // Lecture de la routine d'un jour. RLS filtre sur l'utilisateur : pas besoin
 // de passer le user_id, et impossible de lire celle de quelqu'un d'autre.
 // maybeSingle() renvoie null — et non une erreur — quand la journée n'a pas
 // encore de ligne, ce qui est le cas normal au premier réveil.
 export async function fetchRoutine(localDate) {
+  requireServer();
   const { data, error } = await supabase
     .from("daily_routines")
     .select("local_date, checks")
@@ -19,6 +21,7 @@ export async function fetchRoutine(localDate) {
 // cocher des cases différentes le même jour sans s'écraser. Renvoie la ligne
 // fusionnée telle que le serveur la voit.
 export async function setRoutineCheck(localDate, key, value) {
+  requireServer();
   const { data, error } = await supabase.rpc("set_routine_check", {
     p_local_date: localDate,
     p_key: key,
@@ -33,6 +36,7 @@ export async function setRoutineCheck(localDate, key, value) {
 }
 
 export async function listRoutines() {
+  requireServer();
   const { data, error } = await supabase
     .from("daily_routines")
     .select("local_date, checks, created_at, updated_at")

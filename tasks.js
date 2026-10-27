@@ -1,6 +1,8 @@
 import { supabase } from "./supabaseClient.js";
+import { requireServer } from "./authGate.js";
 
 export async function createTasksFromLines(rawText) {
+  requireServer();
   const lines = rawText.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
   if (lines.length === 0) return [];
   const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -13,6 +15,7 @@ export async function createTasksFromLines(rawText) {
 }
 
 export async function listTasks() {
+  requireServer();
   const { data, error } = await supabase
     .from("tasks")
     .select("*")
@@ -22,16 +25,19 @@ export async function listTasks() {
 }
 
 export async function setTag(id, tagName, value) {
+  requireServer();
   const { error } = await supabase.from("tasks").update({ [tagName]: value }).eq("id", id);
   if (error) throw error;
 }
 
 export async function setReminderTime(id, reminderTime) {
+  requireServer();
   const { error } = await supabase.from("tasks").update({ reminder_time: reminderTime }).eq("id", id);
   if (error) throw error;
 }
 
 export async function setDone(id, done, completedAt = done ? new Date().toISOString() : null) {
+  requireServer();
   const { error } = await supabase
     .from("tasks")
     .update({ done, completed_at: completedAt })
@@ -40,6 +46,7 @@ export async function setDone(id, done, completedAt = done ? new Date().toISOStr
 }
 
 export async function deleteTask(id) {
+  requireServer();
   const { error } = await supabase.from("tasks").delete().eq("id", id);
   if (error) throw error;
 }
