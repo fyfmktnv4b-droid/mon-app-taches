@@ -8,7 +8,59 @@ import { isAuthRetryableFetchError } from "./vendor/supabase-auth-js-2.115.0.js"
 const SUPABASE_URL = "https://ifcrmvuvmirkgdhkkgiv.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_c5F4xEjo1Gdg2tnTz-EUww_VzYzrLfW";
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Deuxième verrou, sous la porte serveur (authGate.js). Quand le SDK n'a pas
+// de jeton d'utilisateur à fournir (jeton expiré, renouvellement en échec
+// pendant ses 60 s de refroidissement), il envoie la requête avec la clé
+// anonyme : la RLS la laisse « réussir » sans rien lire ni modifier, et une
+// modification serait perdue. Une requête de DONNÉES (/rest/v1) sans jeton
+// d'utilisateur est donc refusée avant l'envoi ; sync.js la traite comme une
+// panne (file d'attente). Les requêtes d'authentification (/auth/v1) ne sont
+// jamais touchées, et seule l'ABSENCE de jeton compte, pas son expiration.
+export class NoUserTokenError extends Error {
+  constructor() {
+    super("Hors-ligne : la session n'est pas encore vérifiée.");
+    // « AbortError » : PostgREST ne réessaie pas une requête annulée (sinon
+    // ~7 s de nouvelles tentatives avant de se rabattre sur la copie locale).
+    this.name = "AbortError";
+  }
+}
+
+function headerOf(input, init, name) {
+  if (init?.headers) return new Headers(init.headers).get(name);
+  return input instanceof Request ? input.headers.get(name) : null;
+}
+
+export function dataRequestLock({ restUrl, anonKey, send, onBlocked }) {
+  return function lockedFetch(input, init) {
+    const url = input instanceof Request ? input.url : String(input);
+    if (url.startsWith(restUrl)) {
+      const authorization = headerOf(input, init, "Authorization");
+      if (!authorization || authorization === `Bearer ${anonKey}`) {
+        onBlocked();
+        return Promise.reject(new NoUserTokenError());
+      }
+    }
+    return send(input, init);
+  };
+}
+
+const blockedListeners = [];
+
+// app.js y passe en mode hors-ligne (bandeau, porte fermée).
+export function onDataRequestWithoutUser(callback) {
+  blockedListeners.push(callback);
+}
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  global: {
+    fetch: dataRequestLock({
+      restUrl: `${SUPABASE_URL}/rest/v1/`,
+      anonKey: SUPABASE_ANON_KEY,
+      send: (input, init) => fetch(input, init),
+      onBlocked: () => blockedListeners.forEach((listener) => listener()),
+    }),
+  },
+});
 
 export async function signUp(email, password) {
   const { data, error } = await supabase.auth.signUp({ email, password });

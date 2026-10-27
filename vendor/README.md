@@ -65,6 +65,13 @@ chargement peuvent se tromper de décision.
   (`TOKEN_REFRESHED`, minuteur interne de 30 s) peut prendre jusqu'à ~90 s.
 - **`signOut()` échoue** (sans rien effacer) quand le renouvellement échoue ; avec un
   jeton encore valide mais sans réseau, il efface la session locale et envoie `SIGNED_OUT`.
+- **Requête de données sans session** : faute de jeton d'utilisateur, supabase-js met la
+  clé anonyme dans `Authorization` (`Bearer <clé>`) au lieu d'échouer. La RLS laisse alors
+  une écriture « réussir » sans rien modifier. `dataRequestLock` (supabaseClient.js) refuse
+  ces requêtes vers `/rest/v1` avant l'envoi.
+- **Nouvelles tentatives de PostgREST** : une lecture (GET) qui échoue est réessayée
+  (~7 s au total), sauf si l'erreur s'appelle `AbortError` — d'où ce nom pour le refus du
+  verrou, afin de se rabattre tout de suite sur la copie locale.
 - **Verrou interne** : une requête de renouvellement bloquée (wifi sans internet) retient
   le verrou du SDK ; tout appel `getSession()` attend derrière. L'app ne l'attend jamais
   pour décider d'un écran (délais de 3 s et 5 s).

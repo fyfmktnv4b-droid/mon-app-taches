@@ -1,4 +1,4 @@
-import { signUp, signIn, signOut, onAuthStateChange, sessionKeptButUnrenewable, recheckSession } from "./supabaseClient.js";
+import { signUp, signIn, signOut, onAuthStateChange, sessionKeptButUnrenewable, recheckSession, onDataRequestWithoutUser } from "./supabaseClient.js";
 import { loadTasks, captureTasks, updateTag, updateDone, removeTask, updateReminderTime, flushQueue, initSync, loadAllRoutines, loadRoutine, toggleRoutineCheck } from "./sync.js";
 import { clearLocalData, getCachedTasks, getPendingMutations } from "./storage.js";
 import { setServerGate } from "./authGate.js";
@@ -1011,6 +1011,24 @@ async function handleAuthEvent(session, event) {
 let authEvents = Promise.resolve();
 onAuthStateChange((session, event) => {
   authEvents = authEvents.then(() => handleAuthEvent(session, event)).catch((err) => console.error(err));
+});
+
+// Le jeton a expiré pendant l'usage et le SDK n'a pas pu le renouveler (voir
+// dataRequestLock dans supabaseClient.js) : comme une panne réseau, on passe
+// en mode hors-ligne sur place. La suite arrive par onAuthStateChange
+// (TOKEN_REFRESHED : retour sur place ; SIGNED_OUT : écran de connexion).
+function handleUserTokenMissing() {
+  if (authState !== "verified") return;
+  const out = authTransition(authState, { kind: "noSession", networkFailure: true }, {
+    markerUserId: readMarker()?.userId ?? null,
+  });
+  authState = out.state;
+  setServerGate(serverGateOpen(authState));
+  if (out.screen === "auth") showAuth();
+  else updateOfflineBanner();
+}
+onDataRequestWithoutUser(() => {
+  authEvents = authEvents.then(handleUserTokenMissing).catch((err) => console.error(err));
 });
 
 // En mode hors-ligne, chaque signe de réseau relance la vérification de la
