@@ -1140,8 +1140,10 @@ onAuthStateChange((session, event) => {
 // dataRequestLock dans supabaseClient.js) : comme une panne réseau, on passe
 // en mode hors-ligne sur place. La suite arrive par onAuthStateChange
 // (TOKEN_REFRESHED : retour sur place ; SIGNED_OUT : écran de connexion).
+// Pendant une déconnexion demandée, le jeton manque parce que le SDK vient de
+// l'effacer : son SIGNED_OUT doit trouver l'état "verified" pour tout effacer.
 function handleUserTokenMissing() {
-  if (authState !== "verified") return;
+  if (authState !== "verified" || signOutRequested) return;
   const out = authTransition(authState, { kind: "noSession", networkFailure: true }, {
     markerUserId: readMarker()?.userId ?? null,
   });
