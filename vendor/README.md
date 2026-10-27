@@ -64,7 +64,16 @@ chargement peuvent se tromper de décision.
   `INITIAL_SESSION` vide répond donc tout de suite. Au retour du réseau, la reprise
   (`TOKEN_REFRESHED`, minuteur interne de 30 s) peut prendre jusqu'à ~90 s.
 - **`signOut()` échoue** (sans rien effacer) quand le renouvellement échoue ; avec un
-  jeton encore valide mais sans réseau, il efface la session locale et envoie `SIGNED_OUT`.
+  jeton encore valide mais sans réseau, il efface la session locale, envoie `SIGNED_OUT`
+  **puis** renvoie quand même l'erreur réseau. `app.js` garde donc la demande de
+  déconnexion vraie jusqu'au traitement de ce `SIGNED_OUT`.
+- **Clé de stockage** : `sb-<premier mot du nom d'hôte>-auth-token`, plus des clés
+  compagnons qui commencent par ce nom (`-user`, `-code-verifier`…). `authStorageKey()` et
+  `isSdkAuthKey()` (authLogic.js) refont ce calcul pour la déconnexion sur l'appareil.
+- **Requêtes en cours après une déconnexion locale** : un renouvellement en train de
+  réessayer, ou un `signOut()` bloqué, peut aboutir plus tard et réécrire ou effacer la
+  session, y compris celle d'une nouvelle connexion (constaté). D'où le rechargement de
+  la page après la déconnexion sur l'appareil (`leaveWithoutSdk` dans app.js).
 - **Requête de données sans session** : faute de jeton d'utilisateur, supabase-js met la
   clé anonyme dans `Authorization` (`Bearer <clé>`) au lieu d'échouer. La RLS laisse alors
   une écriture « réussir » sans rien modifier. `dataRequestLock` (supabaseClient.js) refuse

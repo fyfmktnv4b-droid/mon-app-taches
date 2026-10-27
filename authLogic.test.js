@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   authTransition, authInput, serverGateOpen, offlineBannerText,
   OFFLINE_TEXT, SYNCING_TEXT, SYNCING_TEXT_MS,
+  signOutStep, signOutSheetText, authStorageKey, isSdkAuthKey,
 } from "./authLogic.js";
 
 const STATES = ["booting", "verified", "offline", "signedOut"];
@@ -235,4 +236,46 @@ test("the banner says offline until an online event, then syncing for at most 90
   assert.equal(offlineBannerText(1000, 1000 + SYNCING_TEXT_MS - 1), SYNCING_TEXT);
   assert.equal(offlineBannerText(1000, 1000 + SYNCING_TEXT_MS), OFFLINE_TEXT);
   assert.equal(SYNCING_TEXT_MS, 90000);
+});
+
+// --- Déconnexion (faille C, condition M) ---
+
+test("sign-out: offline, a change still waiting needs the network; nothing waiting signs out locally", () => {
+  assert.equal(signOutStep("offline", 2), "needsNetwork");
+  assert.equal(signOutStep("offline", 1), "needsNetwork");
+  assert.equal(signOutStep("offline", 0), "local");
+});
+
+test("sign-out: verified, changes still waiting after the flush ask for confirmation", () => {
+  assert.equal(signOutStep("verified", 0), "server");
+  assert.equal(signOutStep("verified", 3), "confirm");
+});
+
+test("sign-out: an unknown count never signs out without asking", () => {
+  assert.equal(signOutStep("offline", null), "needsNetwork");
+  assert.equal(signOutStep("verified", null), "confirm");
+});
+
+test("sign-out sheet texts, singular, plural and unknown count", () => {
+  assert.equal(signOutSheetText("needsNetwork", 2), "La déconnexion demande le réseau. Tes 2 modifications seront envoyées à son retour.");
+  assert.equal(signOutSheetText("needsNetwork", 1), "La déconnexion demande le réseau. Ta modification sera envoyée à son retour.");
+  assert.equal(signOutSheetText("needsNetwork", null), "La déconnexion demande le réseau. Tes modifications seront envoyées à son retour.");
+  assert.equal(signOutSheetText("confirm", 3), "3 modifications ne sont pas encore envoyées. Se déconnecter maintenant les supprimera.");
+  assert.equal(signOutSheetText("confirm", 1), "1 modification n'est pas encore envoyée. Se déconnecter maintenant la supprimera.");
+  assert.equal(signOutSheetText("confirm", null), "Des modifications ne sont peut-être pas encore envoyées. Se déconnecter maintenant les supprimerait.");
+});
+
+test("the SDK's storage key is derived from the project address like supabase-js does", () => {
+  assert.equal(authStorageKey("https://abcd1234.supabase.co"), "sb-abcd1234-auth-token");
+  assert.equal(authStorageKey("http://127.0.0.1:8788"), "sb-127-auth-token");
+});
+
+test("local sign-out removes every key of the SDK session, and only those", () => {
+  const key = "sb-abcd-auth-token";
+  for (const k of [key, `${key}-user`, `${key}-code-verifier`, `${key}-flow-x-code-verifier`]) {
+    assert.equal(isSdkAuthKey(k, key), true, k);
+  }
+  for (const k of ["mon-app-taches.lastUser", "sb-other-auth-token", `${key}x`, "theme"]) {
+    assert.equal(isSdkAuthKey(k, key), false, k);
+  }
 });

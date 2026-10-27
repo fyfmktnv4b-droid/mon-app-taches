@@ -1,8 +1,8 @@
-import { signUp, signIn, signOut, onAuthStateChange, sessionKeptButUnrenewable, recheckSession, onDataRequestWithoutUser } from "./supabaseClient.js";
+import { signUp, signIn, signOut, onAuthStateChange, sessionKeptButUnrenewable, recheckSession, onDataRequestWithoutUser, forgetSessionOnThisDevice } from "./supabaseClient.js";
 import { loadTasks, captureTasks, updateTag, updateDone, removeTask, updateReminderTime, flushQueue, initSync, loadAllRoutines, loadRoutine, toggleRoutineCheck } from "./sync.js";
 import { clearLocalData, getCachedTasks, getPendingMutations } from "./storage.js";
 import { setServerGate } from "./authGate.js";
-import { authTransition, authInput, serverGateOpen, offlineBannerText, SYNCING_TEXT_MS } from "./authLogic.js";
+import { authTransition, authInput, serverGateOpen, offlineBannerText, SYNCING_TEXT_MS, signOutStep, signOutSheetText } from "./authLogic.js";
 import { readMarker, writeMarker, clearMarker } from "./lastUser.js";
 import { cacheOwner } from "./lastUserLogic.js";
 import { MAX_TASK_LENGTH, longestTooLongLine } from "./syncLogic.js";
@@ -839,7 +839,7 @@ function setMenuOpen(open) {
 menuToggle.addEventListener("click", () => setMenuOpen(menuPanel.hidden));
 menuScrim.addEventListener("click", () => setMenuOpen(false));
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") { setMenuOpen(false); closeReminderSheet(); closeTaskMenu(); }
+  if (event.key === "Escape") { setMenuOpen(false); closeReminderSheet(); closeTaskMenu(); closeSignOutSheet(); }
 });
 // Toute action du menu le referme (la déconnexion / sauvegarde gardent leur handler).
 menuPanel.addEventListener("click", (event) => {
@@ -880,21 +880,134 @@ signUpButton.addEventListener("click", async () => {
   }
 });
 
-signOutButton.addEventListener("click", async () => {
+// --- Se déconnecter ---
+// Une modification non envoyée ne disparaît jamais sans que la personne l'ait
+// accepté. Aucune étape n'attend le SDK ou le réseau sans limite : hors-ligne,
+// une requête peut ne jamais répondre, et le bouton ne doit jamais rester figé.
+const SIGN_OUT_FLUSH_MS = 5000;
+const SIGN_OUT_SERVER_MS = 8000;
+const PUSH_UNSUBSCRIBE_MS = 3000;
+const signOutSheet = document.getElementById("signout-sheet");
+const signOutText = document.getElementById("signout-text");
+const signOutOk = document.getElementById("signout-ok");
+const signOutAnyway = document.getElementById("signout-anyway");
+let signingOut = false;
+
+// Vrai si la promesse s'est terminée (réussie ou non) avant le délai ; sinon
+// elle continue en arrière-plan, on cesse simplement de l'attendre.
+function settlesWithin(promise, ms) {
+  return Promise.race([
+    promise.then(() => true, () => true),
+    new Promise((resolve) => setTimeout(() => resolve(false), ms)),
+  ]);
+}
+
+async function pendingCount() {
   try {
-    await unsubscribeFromPush();
-  } catch (err) {
-    // Best-effort: never block sign-out on a push-unsubscribe failure (e.g.
-    // no subscription existed, or the browser doesn't support Push).
-    console.error(err);
+    return (await getPendingMutations()).length;
+  } catch (_err) {
+    return null; // inconnu : signOutStep() ne le prend jamais pour zéro
   }
+}
+
+function openSignOutSheet(step, count) {
+  signOutText.textContent = signOutSheetText(step, count);
+  signOutOk.textContent = step === "confirm" ? "Rester connecté" : "Compris";
+  signOutAnyway.hidden = step !== "confirm";
+  signOutSheet.hidden = false;
+}
+
+function closeSignOutSheet() {
+  signOutSheet.hidden = true;
+}
+
+const SIGNED_OUT_HERE_KEY = "mon-app-taches.signedOutHere";
+const SERVER_NOT_TOLD = "Déconnexion faite sur cet appareil. Sans réseau, le serveur n'a pas pu être prévenu : ta session y reste valable jusqu'à son expiration.";
+
+// Termine une déconnexion sans attendre le SDK : sa session et le repère sont
+// effacés, puis la page est rechargée (voir forgetSessionOnThisDevice). Le
+// message est retrouvé après le rechargement (sessionStorage, cet onglet seul).
+function leaveWithoutSdk() {
+  forgetSessionOnThisDevice();
+  clearMarker();
+  try {
+    sessionStorage.setItem(SIGNED_OUT_HERE_KEY, "1");
+  } catch (_err) {
+    // Sans le message, la déconnexion reste faite.
+  }
+  location.reload();
+}
+
+// Session vérifiée : désabonnement des notifications (ligne serveur comprise),
+// puis déconnexion auprès du serveur ; SIGNED_OUT fait le reste (handleAuthEvent).
+async function signOutFromServer() {
+  // Best-effort: never block sign-out on a push-unsubscribe failure (e.g.
+  // no subscription existed, or the browser doesn't support Push).
+  await settlesWithin(unsubscribeFromPush().catch((err) => console.error(err)), PUSH_UNSUBSCRIBE_MS);
   signOutRequested = true;
-  try {
-    await signOut();
-  } catch (err) {
-    signOutRequested = false;
-    showAppError(err);
+  const outcome = await Promise.race([
+    signOut().then(() => "done", (err) => err),
+    new Promise((resolve) => setTimeout(() => resolve("timeout"), SIGN_OUT_SERVER_MS)),
+  ]);
+  if (outcome === "done") return;
+  if (outcome === "timeout") {
+    // Le serveur ne répond pas : la déconnexion demandée se termine sur
+    // l'appareil, données locales comprises (comme après SIGNED_OUT).
+    try {
+      await clearLocalData();
+    } catch (err) {
+      console.error(err); // la copie reste protégée par cacheOwner()
+    }
+    leaveWithoutSdk();
+    return;
   }
+  // Erreur : supabase-js 2.115 efface quand même sa session, et son SIGNED_OUT
+  // attend déjà dans la file (vendor/README.md). La demande doit rester vraie
+  // pour lui, puis être retirée, par la même file.
+  authEvents = authEvents.then(() => {
+    signOutRequested = false;
+    if (authSection.hidden) showAppError(outcome);
+    else authInfo.textContent = SERVER_NOT_TOLD;
+  });
+}
+
+// Hors-ligne, rien en attente : déconnexion sur cet appareil, sans le SDK.
+// La copie locale n'est PAS effacée (jamais depuis le mode hors-ligne) : à la
+// prochaine connexion, un autre compte la fera effacer (cacheOwner), le même
+// compte la retrouvera.
+async function signOutOnThisDevice() {
+  // Désabonnement sur l'appareil seulement : la porte est fermée, la ligne
+  // serveur reste (le serveur la constatera morte au prochain envoi).
+  await settlesWithin(unsubscribeFromPush(), PUSH_UNSUBSCRIBE_MS);
+  leaveWithoutSdk();
+}
+
+async function startSignOut() {
+  // Session vérifiée : on tente d'abord d'envoyer ce qui attend.
+  if (authState === "verified") await settlesWithin(flushQueue(), SIGN_OUT_FLUSH_MS);
+  const count = await pendingCount();
+  const step = signOutStep(authState, count);
+  if (step === "server") await signOutFromServer();
+  else if (step === "local") await signOutOnThisDevice();
+  else openSignOutSheet(step, count);
+}
+
+// Passe par la même file que les événements du SDK : l'état ne change pas
+// pendant la décision.
+function runSignOut(action) {
+  if (signingOut) return;
+  signingOut = true;
+  authEvents = authEvents.then(action).catch((err) => console.error(err))
+    .finally(() => { signingOut = false; });
+}
+
+signOutButton.addEventListener("click", () => runSignOut(startSignOut));
+signOutOk.addEventListener("click", closeSignOutSheet);
+document.getElementById("signout-scrim").addEventListener("click", closeSignOutSheet);
+signOutAnyway.addEventListener("click", () => {
+  closeSignOutSheet();
+  // L'état a pu changer pendant que la feuille était ouverte : on redécide.
+  runSignOut(() => (authState === "verified" ? signOutFromServer() : startSignOut()));
 });
 
 exportButton.addEventListener("click", () => {
@@ -1005,6 +1118,16 @@ async function handleAuthEvent(session, event) {
     // Retour du réseau, même compte : on reste sur l'écran et la file repart.
     flushQueue().catch(() => {}).then(() => { if (!appSection.hidden) render(); });
   }
+}
+
+// Message d'une déconnexion faite juste avant le rechargement (leaveWithoutSdk).
+try {
+  if (sessionStorage.getItem(SIGNED_OUT_HERE_KEY)) {
+    sessionStorage.removeItem(SIGNED_OUT_HERE_KEY);
+    authInfo.textContent = SERVER_NOT_TOLD;
+  }
+} catch (_err) {
+  // Stockage inaccessible : pas de message.
 }
 
 // Les événements sont traités un par un, dans l'ordre d'arrivée.

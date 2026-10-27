@@ -4,6 +4,7 @@ import { createClient } from "./vendor/supabase-js.esm.js";
 // Même module que celui chargé par supabase-js (déjà dans ASSETS) : le point
 // d'entrée ne réexporte pas ce test d'erreur.
 import { isAuthRetryableFetchError } from "./vendor/supabase-auth-js-2.115.0.js";
+import { authStorageKey, isSdkAuthKey } from "./authLogic.js";
 
 const SUPABASE_URL = "https://ifcrmvuvmirkgdhkkgiv.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_c5F4xEjo1Gdg2tnTz-EUww_VzYzrLfW";
@@ -77,6 +78,18 @@ export async function signIn(email, password) {
 export async function signOut() {
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
+}
+
+// Déconnexion sur cet appareil seulement : efface la session du SDK de
+// localStorage, sans passer par lui (hors-ligne, son verrou peut être tenu par
+// une requête qui ne répond pas). L'appelant recharge ensuite la page, ce qui
+// coupe ces requêtes : l'une d'elles, aboutie plus tard, réécrirait ou
+// effacerait la session, même celle d'une nouvelle connexion.
+export function forgetSessionOnThisDevice() {
+  const storageKey = authStorageKey(SUPABASE_URL);
+  for (const key of Object.keys(localStorage)) {
+    if (isSdkAuthKey(key, storageKey)) localStorage.removeItem(key);
+  }
 }
 
 export async function getSession() {

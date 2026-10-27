@@ -304,10 +304,10 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 .reminder-pill:not(.set):hover { background: rgba(251, 246, 238, 0.12); }
 
 /* Feuille « Heure du rappel » */
-#reminder-sheet { position: absolute; inset: 0; z-index: 20; display: flex; align-items: flex-end; }
-#reminder-sheet[hidden] { display: none; }
-#reminder-scrim { position: absolute; inset: 0; background: rgba(59, 50, 41, 0.35); }
-#reminder-card {
+#reminder-sheet, #signout-sheet { position: absolute; inset: 0; z-index: 20; display: flex; align-items: flex-end; }
+#reminder-sheet[hidden], #signout-sheet[hidden] { display: none; }
+#reminder-scrim, #signout-scrim { position: absolute; inset: 0; background: rgba(59, 50, 41, 0.35); }
+#reminder-card, #signout-card {
   position: relative; width: 100%; background: var(--card); border-radius: 28px 28px 0 0;
   padding: 20px 20px calc(20px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 14px;
   box-shadow: 0 -8px 28px rgba(59, 50, 41, 0.18);
@@ -323,6 +323,10 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 #reminder-ok:disabled { background: var(--border-warm); color: var(--ink-muted); cursor: not-allowed; }
 .sheet-danger { background: transparent; color: var(--ink-muted); font-weight: 500; }
 .sheet-danger:hover { background: var(--pink-soft); }
+
+/* Feuille « Se déconnecter » : mêmes formes que la feuille du rappel. */
+#signout-text { margin: 4px 0; font-size: 16px; line-height: 1.45; text-align: center; }
+#signout-ok { border-radius: 999px; font-size: 16px; }
 
 /* Boîte « Terminé » : bleu brume, repliée par défaut. Le texte barré reste à
    ~90 % de --done-text (≈ 5:1 sur --done-bg) : c'est le trait qui dit
