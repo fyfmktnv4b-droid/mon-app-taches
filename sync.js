@@ -37,8 +37,9 @@ async function getCurrentUserId() {
   // getUser() re-validates against the server and would fail offline —
   // wrong choice here, since this path only runs when we're already offline.
   const { data: { session }, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  if (!session) throw new Error("Session expirée, reconnecte-toi.");
+  // Jeton expiré pendant une coupure : le SDK ne rend plus de session. La
+  // tâche est quand même mise en file, sous l'id du repère.
+  if (error || !session) return offlineUserId();
   return session.user.id;
 }
 

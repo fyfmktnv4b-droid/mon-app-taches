@@ -133,3 +133,27 @@ test("gate open: the queue is replayed in order and emptied", async () => {
   assert.equal((await storage.getPendingMutations()).length, 0);
   setServerGate(false);
 });
+
+// --- Jeton expiré pendant l'usage : porte encore ouverte, le SDK n'a plus de session ---
+
+test("gate open but the SDK has no session: a new task is queued under the marker, no error", async () => {
+  setServerGate(true);
+  writeMarker("user-A", "b@icloud.com");
+  const realFrom = supabase.from;
+  const realGetUser = supabase.auth.getUser;
+  const realGetSession = supabase.auth.getSession;
+  supabase.from = () => { throw new Error("must not be called"); };
+  supabase.auth.getUser = async () => ({ data: { user: null }, error: Object.assign(new Error("Load failed"), { name: "AuthRetryableFetchError" }) });
+  supabase.auth.getSession = async () => ({ data: { session: null }, error: Object.assign(new Error("Load failed"), { name: "AuthRetryableFetchError" }) });
+  try {
+    const created = await sync.captureTasks("Pendant la coupure");
+    assert.equal(created[0].user_id, "user-A");
+    assert.deepEqual((await storage.getPendingMutations()).map((m) => m.type), ["create"]);
+  } finally {
+    supabase.from = realFrom;
+    supabase.auth.getUser = realGetUser;
+    supabase.auth.getSession = realGetSession;
+    setServerGate(false);
+    clearMarker();
+  }
+});

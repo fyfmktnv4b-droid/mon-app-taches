@@ -194,6 +194,15 @@ test("verified: a token refresh of the same account changes nothing visible", ()
   assert.equal(out.flush, false);
 });
 
+test("verified: the token lost during an outage switches to offline in place, nothing cleared", () => {
+  const out = authTransition("verified", { kind: "noSession", networkFailure: true }, { markerUserId: A });
+  assert.equal(out.state, "offline");
+  assert.equal(out.screen, null);
+  assert.equal(out.clear, false);
+  assert.equal(out.clearMarker, false);
+  assert.equal(serverGateOpen(out.state), false);
+});
+
 test("verified: a requested sign-out clears data and marker", () => {
   const out = authTransition("verified", { kind: "signedOut", requested: true }, { markerUserId: A });
   assert.equal(out.clear, true);

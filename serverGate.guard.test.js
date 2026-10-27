@@ -51,7 +51,7 @@ const GATE = /requireServer\(\)|requireUser\(\)/;
 // Appels volontairement hors porte, avec la raison.
 const WHITELIST = {
   "supabaseClient.js": {
-    "<module>": "adresse du projet et création du client",
+    "<module>": "adresse du projet, création du client, et l'unique fetch( direct vers Supabase : celui du verrou dataRequestLock, qui laisse passer seulement ce qu'il a contrôlé",
     signUp: "action volontaire depuis l'écran de connexion",
     signIn: "action volontaire depuis l'écran de connexion",
     signOut: "encadré par la confirmation de déconnexion",
