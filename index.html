@@ -16,12 +16,17 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
 </head>
 <body>
+  <!-- Bandeau « Mode hors-ligne » (app.js, updateOfflineBanner) : dans le flux,
+       il prend la zone sûre du haut de l'iPhone et pousse l'écran vers le bas. -->
+  <div id="offline-banner" role="status" hidden></div>
+
   <section id="splash" role="status" aria-label="Chargement">
     <img src="icons/icon-192.png" alt="">
   </section>
 
   <section id="auth" hidden>
     <h1>Mes Tâches</h1>
+    <p id="auth-info" role="status"></p>
     <form id="auth-form">
       <input type="email" id="auth-email" placeholder="Email" required>
       <input type="password" id="auth-password" placeholder="Mot de passe" required>

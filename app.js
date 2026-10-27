@@ -1,7 +1,10 @@
-import { signUp, signIn, signOut, onAuthStateChange } from "./supabaseClient.js";
+import { signUp, signIn, signOut, onAuthStateChange, sessionKeptButUnrenewable, recheckSession } from "./supabaseClient.js";
 import { loadTasks, captureTasks, updateTag, updateDone, removeTask, updateReminderTime, flushQueue, initSync, loadAllRoutines, loadRoutine, toggleRoutineCheck } from "./sync.js";
-import { clearLocalData } from "./storage.js";
+import { clearLocalData, getCachedTasks, getPendingMutations } from "./storage.js";
 import { setServerGate } from "./authGate.js";
+import { authTransition, authInput, serverGateOpen, offlineBannerText, SYNCING_TEXT_MS } from "./authLogic.js";
+import { readMarker, writeMarker, clearMarker } from "./lastUser.js";
+import { cacheOwner } from "./lastUserLogic.js";
 import { MAX_TASK_LENGTH, longestTooLongLine } from "./syncLogic.js";
 import { getImportant, getOthers, getUnsorted, getSorted, splitActiveAndArchived, splitOpenAndDone } from "./quadrants.js";
 import { fullExportJson } from "./export.js";
@@ -41,6 +44,8 @@ const appSection = document.getElementById("app");
 const repriseSection = document.getElementById("reprise");
 const authForm = document.getElementById("auth-form");
 const authError = document.getElementById("auth-error");
+const authInfo = document.getElementById("auth-info");
+const offlineBanner = document.getElementById("offline-banner");
 const emailInput = document.getElementById("auth-email");
 const passwordInput = document.getElementById("auth-password");
 const signUpButton = document.getElementById("auth-signup");
@@ -70,7 +75,12 @@ const openRows = new Set();
 // jamais enregistré. « Validé ? » est la seule chose qui écrit done=true.
 const draftDone = new Set();
 let doneOpen = false; // boîte « Terminé » dépliée ? (repliée par défaut) // tâches dont le panneau d'options est déplié
-let wasSignedIn = null; // sentinel: forces the first auth event through
+// État de connexion (voir authLogic.js) : "booting", "verified", "offline" ou
+// "signedOut". La porte serveur (authGate.js) suit cet état.
+let authState = "booting";
+let signOutRequested = false; // vrai seulement pendant un clic sur « Se déconnecter »
+let onlineSince = null; // dernier événement « online » vu en mode hors-ligne
+let bannerTimer = null;
 let routineLocalDate = null; // the local day the routine screen is currently showing
 let routineState = {}; // that day's checks, as last known (server, cache, or optimistic)
 
@@ -93,10 +103,14 @@ function settleSplash() {
   if (splashDone) return;
   clearTimeout(splashTimer);
   const elapsed = performance.now() - splashStart;
-  const screen = splashScreen(splashAuthEvent, elapsed);
-  if (screen === "welcome") showWelcome();
+  const options = { hasMarker: readMarker() !== null, online: navigator.onLine };
+  const screen = splashScreen(splashAuthEvent, elapsed, options);
+  // Sans réponse du SDK à temps : mode hors-ligne provisoire (repère présent)
+  // ou connexion. Seul un événement ultérieur pourra changer cet état.
+  if (screen !== "wait" && authState === "booting") authState = screen === "offline" ? "offline" : "signedOut";
+  if (screen === "welcome" || screen === "offline") showWelcome();
   else if (screen === "auth") showAuth();
-  else splashTimer = setTimeout(settleSplash, splashWakeInMs(splashAuthEvent, elapsed));
+  else splashTimer = setTimeout(settleSplash, splashWakeInMs(splashAuthEvent, elapsed, options));
 }
 
 function showWelcome() {
@@ -106,6 +120,8 @@ function showWelcome() {
   appSection.hidden = true;
   repriseSection.hidden = true;
   welcomeSection.hidden = false;
+  authInfo.textContent = "";
+  updateOfflineBanner();
   repriseOffered = false;
   // Reset in case a previous sign-in's click left this disabled (see the
   // welcomeContinue click handler below) — a fresh welcome screen must
@@ -159,6 +175,21 @@ function showAuth() {
   repriseSection.hidden = true;
   authSection.hidden = false;
   mainView.innerHTML = "";
+  updateOfflineBanner();
+}
+
+// Bandeau « Mode hors-ligne » : visible sur tous les écrans de l'app tant que
+// la session n'est pas vérifiée, jamais sur le chargement ni la connexion.
+function updateOfflineBanner() {
+  clearTimeout(bannerTimer);
+  const visible = authState === "offline" && splashDone && authSection.hidden;
+  offlineBanner.hidden = !visible;
+  document.documentElement.classList.toggle("offline-mode", visible);
+  if (!visible) return;
+  const now = Date.now();
+  offlineBanner.textContent = offlineBannerText(onlineSince, now);
+  // « Synchronisation en cours… » ne dure pas : on repasse au texte hors-ligne.
+  if (onlineSince !== null) bannerTimer = setTimeout(updateOfflineBanner, Math.max(0, onlineSince + SYNCING_TEXT_MS - now) + 50);
 }
 
 // Builds the four morning checkboxes from routineState and wires each one to
@@ -857,9 +888,11 @@ signOutButton.addEventListener("click", async () => {
     // no subscription existed, or the browser doesn't support Push).
     console.error(err);
   }
+  signOutRequested = true;
   try {
     await signOut();
   } catch (err) {
+    signOutRequested = false;
     showAppError(err);
   }
 });
@@ -899,27 +932,104 @@ captureForm.addEventListener("submit", async (event) => {
   }
 });
 
-onAuthStateChange((session) => {
-  const nowSignedIn = !!session;
-  if (nowSignedIn === wasSignedIn) return;
-  // Only a true signed-in -> signed-out transition is a sign-out. The `null`
-  // sentinel also lets a signed-out cold boot through, and that must NOT clear:
-  // an expired session offline would otherwise wipe the cache and the unsynced queue.
-  const isSignOut = wasSignedIn === true && !nowSignedIn;
-  wasSignedIn = nowSignedIn;
-  // Provisoire (branchement complet au commit suivant) : porte ouverte dès
-  // que le SDK a une session, comme avant.
-  setServerGate(nowSignedIn);
-  // Best-effort: a clear failure must not block getting back to the auth screen.
-  if (isSignOut) clearLocalData().catch((err) => console.error(err));
+// Message de l'écran de connexion quand la session n'a pas pu être gardée.
+async function showExpiredMessage(marker) {
+  let pending = 0;
+  try {
+    pending = (await getPendingMutations()).length;
+  } catch (_err) {
+    // Sans compte exact, on n'annonce simplement pas de nombre.
+  }
+  const account = marker?.maskedEmail ? ` avec ${marker.maskedEmail}` : "";
+  const kept = pending === 0 ? ""
+    : ` : ${pending === 1 ? "ta modification non envoyée est gardée et partira" : `tes ${pending} modifications non envoyées sont gardées et partiront`} dès la connexion`;
+  authInfo.textContent = `Ta session a expiré. Reconnecte-toi${account}${kept}.`;
+}
+
+async function ownerOfCache() {
+  try {
+    return cacheOwner(await getCachedTasks());
+  } catch (_err) {
+    return null;
+  }
+}
+
+// Applique authTransition() (authLogic.js) à un événement du SDK.
+async function handleAuthEvent(session, event) {
+  const marker = readMarker();
+  // INITIAL_SESSION vide : panne réseau (le SDK garde sa session) ou plus de
+  // session du tout ? Seulement utile s'il existe un repère.
+  const networkFailure = !session && event !== "SIGNED_OUT" && marker !== null
+    && (authState === "booting" || authState === "offline")
+    && await sessionKeptButUnrenewable();
+  const input = authInput(event, session, { signOutRequested, networkFailure });
+  if (input.kind === "signedOut") signOutRequested = false;
+  const out = authTransition(authState, input, {
+    markerUserId: marker?.userId ?? null,
+    cacheOwnerId: input.kind === "session" && !marker ? await ownerOfCache() : null,
+  });
+  authState = out.state;
+
+  if (out.clear) {
+    // Attendu AVANT d'ouvrir la porte ou d'afficher quoi que ce soit : les
+    // données d'un autre compte ne doivent jamais apparaître ni être rejouées.
+    try {
+      await clearLocalData();
+    } catch (err) {
+      console.error(err);
+      authState = "signedOut";
+      setServerGate(false);
+      showAuth();
+      authError.textContent = "Impossible de préparer l'app pour ce compte. Ferme les autres onglets de l'app et réessaie.";
+      signOut().catch(() => {});
+      return;
+    }
+  }
+  setServerGate(serverGateOpen(authState));
+  if (out.clearMarker) clearMarker();
+  if (out.setMarker) writeMarker(session.user.id, session.user.email);
+  if (out.expiredMessage) await showExpiredMessage(marker);
+  if (authState !== "offline") onlineSince = null;
+
   // Au démarrage, l'écran de chargement garde la main jusqu'à la décision de
   // splashScreen() ; ensuite chaque événement change d'écran tout de suite.
   if (!splashDone) {
-    splashAuthEvent = nowSignedIn ? "session" : "none";
+    splashAuthEvent = { verified: "session", offline: "network", signedOut: "none" }[authState];
     settleSplash();
     return;
   }
-  if (nowSignedIn) showWelcome(); else showAuth();
+  if (out.screen === "welcome" || out.screen === "offline") showWelcome();
+  else if (out.screen === "auth") showAuth();
+  else updateOfflineBanner();
+  if (out.flush) {
+    // Retour du réseau, même compte : on reste sur l'écran et la file repart.
+    flushQueue().catch(() => {}).then(() => { if (!appSection.hidden) render(); });
+  }
+}
+
+// Les événements sont traités un par un, dans l'ordre d'arrivée.
+let authEvents = Promise.resolve();
+onAuthStateChange((session, event) => {
+  authEvents = authEvents.then(() => handleAuthEvent(session, event)).catch((err) => console.error(err));
+});
+
+// En mode hors-ligne, chaque signe de réseau relance la vérification de la
+// session ; la réponse arrive par onAuthStateChange.
+function recheckIfOffline() {
+  if (authState === "offline") recheckSession();
+}
+window.addEventListener("online", () => {
+  if (authState === "offline") onlineSince = Date.now();
+  updateOfflineBanner();
+  recheckIfOffline();
+});
+window.addEventListener("offline", () => {
+  onlineSince = null;
+  updateOfflineBanner();
+});
+window.addEventListener("focus", recheckIfOffline);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") recheckIfOffline();
 });
 
 settleSplash();
