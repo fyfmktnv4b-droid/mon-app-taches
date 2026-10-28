@@ -410,6 +410,7 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 .others-card .task-row { background: var(--cream); border: 1px solid var(--border-warm); border-radius: 18px; padding: 2px 8px 0 14px; margin-top: 8px; }
 
 #welcome {
+  position: relative;
   height: 100vh;
   height: 100dvh;
   display: flex;
@@ -495,19 +496,19 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
   flex-shrink: 0;
 }
 #welcome-continue:disabled { background: var(--border-warm); color: var(--ink-muted); cursor: not-allowed; }
-/* Version du code qui tourne (version.js), sous le bouton : informative, pas interactive. */
+/* Version du code qui tourne (version.js) : dans le coin bas droit, hors du flux,
+   pour ne rien pousser ; au-dessus de la zone de sécurité du bas. Informative, pas interactive. */
 #welcome-version {
-  margin: 12px 0 0;
-  padding-bottom: env(safe-area-inset-bottom);
+  position: absolute;
+  right: 24px;
+  bottom: calc(env(safe-area-inset-bottom) + 12px);
+  margin: 0;
   font-size: 11px;
   line-height: 1.2;
   color: var(--ink-muted);
-  flex-shrink: 0;
   pointer-events: none;
   user-select: none;
 }
-/* Écran bas (iPhone SE) : la version prend de la place sous le bouton, qui la rend à la citation et au verset. */
-@media (max-height: 700px) { #welcome-continue { margin-top: 16px; } }
 #routine-skip:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* ---------------------------------------------------------------------
