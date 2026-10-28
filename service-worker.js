@@ -41,6 +41,7 @@ const ASSETS = [
   "./routineBlock.js",
   "./splashLogic.js",
   "./version.js",
+  "./noZoom.js",
   "./repriseLogic.js",
   "./reprise.js",
   "./repriseScreen.js",

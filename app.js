@@ -16,6 +16,7 @@ import { mountRoutineBlock } from "./routineBlock.js";
 import { localDateString, reminderTimeProblem, defaultReminderTime, noReminderTimeLeft, REMINDER_NO_TIME_LEFT_MESSAGE } from "./localDate.js";
 import { splashScreen, splashWakeInMs } from "./splashLogic.js";
 import { APP_VERSION } from "./version.js";
+import "./noZoom.js";
 import { pendingReprise, bannerTitle, bannerSubtitle } from "./repriseLogic.js";
 import { loadTasksForReprise } from "./reprise.js";
 import { openRepriseScreen, handledIdsFor, abandonedIds } from "./repriseScreen.js";
