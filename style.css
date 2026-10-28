@@ -112,6 +112,10 @@ body { margin: 0; background: var(--cream); color: var(--ink); }
    (#main-view, .unsorted-wrap, #reprise). Défilement et taps restent permis ;
    le rebond élastique n'est pas touché. Voir aussi noZoom.js et la balise viewport. */
 * { touch-action: manipulation; }
+/* Accueil figé : aucun glissement, aucun rebond, seulement des taps (« none » l'emporte
+   dans l'intersection avec « manipulation » des descendants). #welcome[hidden] est en
+   display: none : masqué, la règle n'a aucun effet. Le bandeau est figé plus bas. */
+#welcome { touch-action: none; }
 /* Écran de chargement du démarrage (voir splashLogic.js). Le fond de la page
    est aussi vert tant que « loading » est posée, pour qu'aucune bande crème
    ne reste sur les bords (zones sûres, rebond du défilement). */
@@ -714,6 +718,9 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
   border-bottom: 1px solid var(--sage-soft-border);
 }
 #offline-banner[hidden] { display: none; }
+/* Le bandeau est au-dessus de l'accueil : figé seulement tant que l'accueil est affiché,
+   pour qu'un glissement sur le bandeau garde son effet sur les écrans qui défilent. */
+body:has(#welcome:not([hidden])) #offline-banner { touch-action: none; }
 html.offline-mode #app,
 html.offline-mode #welcome,
 html.offline-mode #routine { height: calc(100dvh - var(--offline-banner-h)); }
