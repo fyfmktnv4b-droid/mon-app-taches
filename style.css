@@ -106,6 +106,12 @@
   font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 body { margin: 0; background: var(--cream); color: var(--ink); }
+/* Pas de zoom par double-tap ni par pincement. touch-action ne s'hérite pas : le
+   geste autorisé se calcule de l'élément touché jusqu'au premier conteneur qui
+   défile (inclus), donc la règle vise TOUS les éléments, conteneurs compris
+   (#main-view, .unsorted-wrap, #reprise). Défilement et taps restent permis ;
+   le rebond élastique n'est pas touché. Voir aussi noZoom.js et la balise viewport. */
+* { touch-action: manipulation; }
 /* Écran de chargement du démarrage (voir splashLogic.js). Le fond de la page
    est aussi vert tant que « loading » est posée, pour qu'aucune bande crème
    ne reste sur les bords (zones sûres, rebond du défilement). */
