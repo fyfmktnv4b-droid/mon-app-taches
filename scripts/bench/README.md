@@ -14,7 +14,16 @@ node scripts/bench/bench.js
 2. une requête vers une autre adresse externe (une IP et un nom en https) est détournée vers un piège local qui la refuse : rien ne sort de la machine ;
 3. aucun service worker n'est actif dans la copie.
 
-L'isolation est celle du navigateur : résolveur (`--host-resolver-rules`), proxy piège (`--proxy-server`) et adresse réécrite dans la copie. La fin du run compte les entrées « ILLICITES » : requêtes de la page vers une autre adresse (le banc échoue s'il y en a). Les tentatives que Chrome fait de lui-même (mises à jour, comptes Google) sont refusées par le piège et comptées à part.
+L'isolation est celle du navigateur : résolveur (`--host-resolver-rules`), proxy piège (`--proxy-server`) et adresse réécrite dans la copie.
+
+## Le journal : requête de la page ou tentative de Chrome
+
+Tout ce qui sort vers une autre adresse arrive au piège, qui le **refuse toujours** et le journalise. À la fin du run, chaque refus est classé :
+
+- **Page** : le nom d'hôte figure parmi ceux que la page a réellement demandés (relevés par CDP, `Network.requestWillBeSent`). C'est une entrée « ILLICITE » : **le banc échoue**. Seules échappent à ce compte les deux sondes voulues du contrôle d'isolation.
+- **Chrome** : le piège a reçu l'hôte sans que la page l'ait demandé (mises à jour, comptes Google, contrôle des mots de passe…). Refusée aussi, elle est comptée et listée à part, sans faire échouer le banc.
+
+Il n'existe **aucune liste d'hôtes autorisés** : le tri ne repose que sur ce que la page a demandé. Toute requête de la page vers un mauvais `Host` chez l'app ou le faux serveur est ILLICITE aussi. Le tri est testé : `journal.test.js` (sans Chrome) et, avec Chrome, le dernier test de `isolation.chrome.test.js`.
 
 ## Ajouter un scénario
 
