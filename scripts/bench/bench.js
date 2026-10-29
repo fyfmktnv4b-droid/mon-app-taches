@@ -31,6 +31,20 @@ export async function startBench({ mapSupabase = true, copyHook } = {}) {
   }
 }
 
+// Bilan du journal en fin de run. Une requête demandée par la PAGE vers une
+// autre adresse (hors sondes voulues du contrôle) fait échouer le banc ; ce que
+// Chrome tente de lui-même est compté à part. Aucune liste d'hôtes autorisés.
+export function journalSummary(fake, pageHosts) {
+  const illicit = fake.illicit(pageHosts);
+  return {
+    illicit,
+    browserOwn: fake.browserOwn(pageHosts),
+    wanted: fake.wantedIllicit(),
+    unhandled: fake.unhandled(),
+    failed: illicit.length > 0,
+  };
+}
+
 async function main() {
   const bench = await startBench();
   const { fake, page } = bench;
@@ -54,8 +68,7 @@ async function main() {
       }
     }
 
-    const illicit = fake.illicit(page.requestedHosts);
-    const browserOwn = fake.browserOwn(page.requestedHosts);
+    const { illicit, browserOwn, failed } = journalSummary(fake, page.requestedHosts);
     console.log(`\nJournal : ${fake.entries.length} requêtes vues`);
     console.log(`  entrées ILLICITES (demandées par la page) hors sondes volontaires du contrôle : ${illicit.length}`);
     for (const e of illicit) console.log(`    ${e.server} ${e.method} ${e.target}`);
@@ -64,7 +77,7 @@ async function main() {
     console.log(`  sondes volontaires du contrôle (refusées comme prévu) : ${fake.wantedIllicit().length}`);
     console.log(`  requêtes non gérées par le faux Supabase : ${fake.unhandled().length}`);
     for (const e of fake.unhandled()) console.log(`    ${e.target}`);
-    if (illicit.length > 0) failures++;
+    if (failed) failures++;
   } catch (err) {
     console.error(err.message);
     failures++;
