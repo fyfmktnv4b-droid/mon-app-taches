@@ -1,21 +1,28 @@
-// Couche données de l'écran « À reprendre aujourd'hui ». Ne passe que par les
-// fonctions existantes de sync.js (inchangé) et de storage.js : mêmes règles
-// hors-ligne que le reste de l'app (file de mutations, last-write-wins).
-import { loadTasks, updateTag, updateReminderTime, removeTask } from "./sync.js";
+// Couche données de l'écran « À reprendre aujourd'hui ». Écrit uniquement par
+// les fonctions existantes de sync.js et de storage.js : mêmes règles
+// hors-ligne que le reste de l'app (file de mutations, last-write-wins). Seule
+// la carte « Hier » lit en plus routines.js (voir loadYesterdayQuestions).
+import { loadTasks, updateTag, updateReminderTime, removeTask, toggleRoutineCheck } from "./sync.js";
+import { fetchRoutine } from "./routines.js";
 import { getCachedTasks, setCachedTasks, getPendingMutations, enqueueMutation } from "./storage.js";
 import { applyMutation } from "./syncLogic.js";
-import { writeChangesInOrder } from "./repriseLogic.js";
+import { applyRoutineMutation } from "./routineLogic.js";
+import { writeChangesInOrder, previousDateString, yesterdayQuestions } from "./repriseLogic.js";
 
 // Même plafond que la routine (sync.js) : un réseau lent ne doit pas figer le
 // démarrage, on prend alors le cache local.
 const READ_TIMEOUT_MS = 2000;
 
+function withTimeout(promise) {
+  return Promise.race([
+    promise,
+    new Promise((_resolve, reject) => setTimeout(() => reject(new Error("timeout")), READ_TIMEOUT_MS)),
+  ]);
+}
+
 export async function loadTasksForReprise() {
   try {
-    return await Promise.race([
-      loadTasks(),
-      new Promise((_resolve, reject) => setTimeout(() => reject(new Error("timeout")), READ_TIMEOUT_MS)),
-    ]);
+    return await withTimeout(loadTasks());
   } catch (_err) {
     try {
       return await getCachedTasks();
@@ -30,6 +37,34 @@ async function enqueue(mutation) {
   await enqueueMutation(mutation);
   const cached = await getCachedTasks();
   await setCachedTasks(applyMutation(cached, mutation));
+}
+
+// Carte « Hier » : seulement d'après une lecture FRAÎCHE du serveur. Un cache
+// resté sur hier matin ne voit pas les pas cochés plus tard sur un autre
+// appareil, et « Non » écraserait alors un vrai true. Hors-ligne, réseau lent
+// ou porte fermée : pas de carte cette fois-ci (rien n'est perdu, la question
+// revient à la prochaine ouverture du jour).
+export async function loadYesterdayQuestions(today) {
+  const yesterday = previousDateString(today);
+  try {
+    const row = await withTimeout(fetchRoutine(yesterday));
+    // Une réponse encore en file (donnée hors-ligne) compte déjà comme répondue.
+    const pending = await getPendingMutations().catch(() => []);
+    const routine = pending.reduce(
+      (acc, mutation) => applyRoutineMutation(acc, mutation),
+      { local_date: yesterday, checks: row?.checks ?? {} },
+    );
+    return { yesterday, questions: yesterdayQuestions(yesterday, routine.checks) };
+  } catch (_err) {
+    return { yesterday, questions: [] };
+  }
+}
+
+// Réponses de la carte « Hier », écrites à la sortie de l'écran (d'ici là,
+// « Annuler » ne fait que les oublier). Même écriture que la routine :
+// set_routine_check pour la date d'hier, ou la file si le réseau manque.
+export async function commitHabitAnswers(yesterday, answers) {
+  for (const [key, done] of answers) await toggleRoutineCheck(yesterday, key, done);
 }
 
 async function hasPending() {

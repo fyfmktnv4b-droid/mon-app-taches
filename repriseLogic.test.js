@@ -4,6 +4,7 @@ import {
   previousDateString, daysBetween, localNoonIso, isPendingReprise, pendingReprise,
   recoverChanges, validateChanges, undoChanges, applyChanges, changeToMutation, writeChangesInOrder,
   introSentence, counterLabel, ageLabel, bannerTitle, bannerSubtitle, confirmationLabel, recapSummary,
+  yesterdayQuestions, habitQuestion, habitConfirmation, screenIntro,
 } from "./repriseLogic.js";
 import { applyMutation } from "./syncLogic.js";
 import { localDateString } from "./localDate.js";
@@ -176,4 +177,52 @@ test("texts: singular / plural, counter, age, banner, confirmation, recap", () =
   assert.equal(confirmationLabel("abandon", task()), "Abandonnée");
   assert.equal(recapSummary({ recover: 2, validate: 1 }), "2 récupérées · 1 validée");
   assert.equal(recapSummary({ abandon: 1 }), "1 abandonnée");
+});
+
+// --- Carte « Hier » : habitudes attendues hier, sans réponse ---
+
+const SUNDAY = "2026-11-01";
+const MONDAY = "2026-11-02";
+const TUESDAY = "2026-11-03";
+
+test("Hier: no daily_routines row at all (no checks) means no answer, so the card asks", () => {
+  assert.deepEqual(yesterdayQuestions(MONDAY, undefined).map((q) => q.key), ["steps", "gym"]);
+  assert.deepEqual(yesterdayQuestions(MONDAY, null).map((q) => q.key), ["steps", "gym"]);
+  assert.deepEqual(yesterdayQuestions(MONDAY, {}).map((q) => q.key), ["steps", "gym"]);
+});
+
+test("Hier: steps always, gym only on an official day, with the day's session", () => {
+  assert.deepEqual(yesterdayQuestions(SUNDAY, {}).map((q) => q.key), ["steps"]);
+  assert.deepEqual(yesterdayQuestions(TUESDAY, {}).map((q) => q.key), ["steps"]);
+  assert.equal(yesterdayQuestions(MONDAY, {})[1].session, "Haut du corps A");
+});
+
+test("Hier: a box already ticked, or already answered « Non » (false), is not asked again", () => {
+  assert.deepEqual(yesterdayQuestions(MONDAY, { steps: true }).map((q) => q.key), ["gym"]);
+  assert.deepEqual(yesterdayQuestions(MONDAY, { steps: false, gym: false }), []);
+  assert.deepEqual(yesterdayQuestions(MONDAY, { gym: true }).map((q) => q.key), ["steps"]);
+});
+
+test("Hier: a skipped morning routine (skipped) does not stop the questions", () => {
+  assert.deepEqual(yesterdayQuestions(MONDAY, { skipped: true, wake: false }).map((q) => q.key), ["steps", "gym"]);
+});
+
+test("Hier: yesterday is the LOCAL previous day, even just after midnight", () => {
+  // 00:30 à Paris le 3 novembre = 23:30 UTC le 2 : hier = le 2, pas le 1er.
+  const today = localDateString(new Date("2026-11-02T23:30:00Z"), PARIS);
+  assert.equal(today, "2026-11-03");
+  assert.equal(previousDateString(today), MONDAY);
+});
+
+test("Hier: texts", () => {
+  const [steps, gym] = yesterdayQuestions(MONDAY, {});
+  assert.equal(habitQuestion(steps), "Hier, 10 000 pas ?");
+  assert.equal(habitQuestion(gym), "Hier, salle : Haut du corps A ?");
+  assert.equal(habitConfirmation(true), "Noté : fait hier, bravo");
+  assert.equal(habitConfirmation(false), "Noté. Aujourd'hui est un nouveau jour");
+  assert.equal(screenIntro(0, 1), "Une petite question sur hier.");
+  assert.equal(screenIntro(0, 2), "Deux petites questions sur hier.");
+  assert.equal(screenIntro(2, 1), introSentence(2));
+  assert.equal(recapSummary({ recover: 1, answer: 2 }), "1 récupérée · 2 réponses sur hier");
+  assert.equal(recapSummary({ answer: 1 }), "1 réponse sur hier");
 });

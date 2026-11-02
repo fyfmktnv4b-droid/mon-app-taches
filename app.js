@@ -18,7 +18,7 @@ import { splashScreen, splashWakeInMs } from "./splashLogic.js";
 import { APP_VERSION } from "./version.js";
 import "./noZoom.js";
 import { pendingReprise, bannerTitle, bannerSubtitle } from "./repriseLogic.js";
-import { loadTasksForReprise } from "./reprise.js";
+import { loadTasksForReprise, loadYesterdayQuestions } from "./reprise.js";
 import { openRepriseScreen, handledIdsFor, abandonedIds } from "./repriseScreen.js";
 import { MORNING_KEYS, MORNING_LABELS, SKIP_KEY, isChecked, isMorningDone, shouldShowRoutine } from "./routineLogic.js";
 
@@ -265,8 +265,9 @@ async function maybeShowRoutine() {
 }
 
 // « À reprendre aujourd'hui » : proposé automatiquement une seule fois par
-// ouverture de l'app (après la routine), seulement s'il y a des tâches en
-// attente. Ensuite, seul le bandeau de l'écran principal le rouvre.
+// ouverture de l'app (après la routine), s'il y a des tâches en attente OU des
+// questions sur les habitudes d'hier (carte « Hier »). Ensuite, seul le
+// bandeau de l'écran principal le rouvre, pour les tâches seulement.
 let repriseOffered = false;
 let startupInFlight = null; // évite un double passage sur un double tap
 
@@ -278,11 +279,12 @@ function enterAfterRoutine() {
     routineSkip.disabled = true;
     startupInFlight = (async () => {
       try {
-        const tasks = await loadTasksForReprise();
         const today = todayDateString();
+        // En parallèle, chacune plafonnée à 2 s : pas d'attente en plus.
+        const [tasks, hier] = await Promise.all([loadTasksForReprise(), loadYesterdayQuestions(today)]);
         const waiting = pendingReprise(tasks, today, undefined, handledIdsFor(today));
         repriseOffered = true;
-        if (waiting.length) showReprise(waiting); else await enterApp();
+        if (waiting.length || hier.questions.length) showReprise(waiting, hier); else await enterApp();
       } catch (err) {
         // Comme maybeShowRoutine : en cas d'erreur, on entre quand même dans l'app.
         console.error(err);
@@ -298,14 +300,15 @@ function enterAfterRoutine() {
   return startupInFlight;
 }
 
-function showReprise(tasks) {
+function showReprise(tasks, hier = { yesterday: null, questions: [] }) {
   welcomeSection.hidden = true;
   routineSection.hidden = true;
   authSection.hidden = true;
   appSection.hidden = true;
   repriseSection.hidden = false;
   openRepriseScreen(repriseSection, {
-    tasks, today: todayDateString(), dateLabel: formatHeaderDate(new Date()), onExit: enterApp,
+    tasks, habitQuestions: hier.questions, yesterday: hier.yesterday,
+    today: todayDateString(), dateLabel: formatHeaderDate(new Date()), onExit: enterApp,
   });
 }
 
