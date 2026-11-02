@@ -30,6 +30,14 @@ export async function setTag(id, tagName, value) {
   if (error) throw error;
 }
 
+// Plusieurs colonnes d'une tâche dans une seule requête (donc ensemble ou pas
+// du tout), ex. important et important_since.
+export async function setFields(id, fields) {
+  requireServer();
+  const { error } = await supabase.from("tasks").update(fields).eq("id", id);
+  if (error) throw error;
+}
+
 export async function setReminderTime(id, reminderTime) {
   requireServer();
   const { error } = await supabase.from("tasks").update({ reminder_time: reminderTime }).eq("id", id);
