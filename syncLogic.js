@@ -10,6 +10,10 @@ export function applyMutation(tasks, mutation) {
       return tasks.map((t) =>
         t.id === mutation.id ? { ...t, reminder_time: mutation.reminderTime } : t
       );
+    case "setFields":
+      return tasks.map((t) =>
+        t.id === mutation.id ? { ...t, ...mutation.fields } : t
+      );
     case "setDone":
       return tasks.map((t) =>
         t.id === mutation.id ? { ...t, done: mutation.done, completed_at: mutation.completedAt } : t
@@ -28,6 +32,16 @@ export function resolveMutationIds(mutation, idMap) {
   if (mutation.type === "create" || mutation.id === undefined) return mutation;
   if (!idMap.has(mutation.id)) return mutation;
   return { ...mutation, id: idMap.get(mutation.id) };
+}
+
+// Champs à écrire, en UNE seule mise à jour, quand une tâche passe dans
+// Important (true) ou en sort (false = Autres, null = À trier).
+// important_since = jour (local) d'ENTRÉE dans Important : posé à l'entrée,
+// effacé à la sortie, jamais touché si la tâche y était déjà.
+export function importanceFields(task, important, today) {
+  if (important !== true) return { important, important_since: null };
+  if (task.important === true) return { important: true };
+  return { important: true, important_since: today };
 }
 
 // Longueur maximale d'un titre, identique à la contrainte tasks_text_length

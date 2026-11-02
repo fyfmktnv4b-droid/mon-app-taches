@@ -1,11 +1,11 @@
 import { signUp, signIn, signOut, onAuthStateChange, sessionKeptButUnrenewable, recheckSession, onDataRequestWithoutUser, forgetSessionOnThisDevice } from "./supabaseClient.js";
-import { loadTasks, captureTasks, updateTag, updateDone, removeTask, updateReminderTime, flushQueue, initSync, loadAllRoutines, loadRoutine, toggleRoutineCheck } from "./sync.js";
+import { loadTasks, captureTasks, updateFields, updateDone, removeTask, updateReminderTime, flushQueue, initSync, loadAllRoutines, loadRoutine, toggleRoutineCheck } from "./sync.js";
 import { clearLocalData, getCachedTasks, getPendingMutations } from "./storage.js";
 import { setServerGate } from "./authGate.js";
 import { authTransition, authInput, serverGateOpen, offlineBannerText, SYNCING_TEXT_MS, signOutStep, signOutSheetText } from "./authLogic.js";
 import { readMarker, writeMarker, clearMarker } from "./lastUser.js";
 import { cacheOwner } from "./lastUserLogic.js";
-import { MAX_TASK_LENGTH, longestTooLongLine } from "./syncLogic.js";
+import { MAX_TASK_LENGTH, longestTooLongLine, importanceFields } from "./syncLogic.js";
 import { getImportant, getOthers, getUnsorted, getSorted, splitActiveAndArchived, splitOpenAndDone } from "./quadrants.js";
 import { fullExportJson } from "./export.js";
 import { getSettings, setMorningReminderTime, setNotificationsEnabled } from "./settings.js";
@@ -78,6 +78,10 @@ const openRows = new Set();
 // Cases cochées mais pas encore validées (Important / Autres) : brouillon local,
 // jamais enregistré. « Validé ? » est la seule chose qui écrit done=true.
 const draftDone = new Set();
+// Tâches de l'écran principal telles qu'au dernier rendu, par id : le
+// classement a besoin de l'état d'avant pour savoir si la tâche ENTRE dans
+// Important (voir importanceFields).
+let shownTasks = new Map();
 let doneOpen = false; // boîte « Terminé » dépliée ? (repliée par défaut) // tâches dont le panneau d'options est déplié
 // État de connexion (voir authLogic.js) : "booting", "verified", "offline" ou
 // "signedOut". La porte serveur (authGate.js) suit cet état.
@@ -429,6 +433,13 @@ function validateTask(id) {
   safely(() => updateDone(id, true));
 }
 
+// Important (true) ou Autre (false) : important et important_since partent
+// ensemble, en une seule écriture (directe ou en file).
+function classifyTask(id, important) {
+  const task = shownTasks.get(id) ?? { id, important: null };
+  return updateFields(id, importanceFields(task, important, todayDateString()));
+}
+
 function wireTaskRows(container) {
   container.querySelectorAll(".task-row[data-id]").forEach((row) => {
     const id = row.dataset.id;
@@ -461,10 +472,10 @@ function wireTaskRows(container) {
       openReminderSheet(id, event.currentTarget.dataset.time);
     });
     row.querySelector(".task-important")?.addEventListener("click", () => {
-      safely(() => updateTag(id, "important", true));
+      safely(() => classifyTask(id, true));
     });
     row.querySelector(".task-other")?.addEventListener("click", () => {
-      safely(() => updateTag(id, "important", false));
+      safely(() => classifyTask(id, false));
     });
     row.querySelector(".task-delete")?.addEventListener("click", () => {
       openRows.delete(id);
@@ -539,6 +550,7 @@ function wireBackLink() {
 
 async function renderMainView() {
   const allTasks = await loadTasks();
+  shownTasks = new Map(allTasks.map((t) => [t.id, t]));
   const today = todayDateString();
   const { active } = splitActiveAndArchived(allTasks, today);
   const { open: allOpen, done } = splitOpenAndDone(active);

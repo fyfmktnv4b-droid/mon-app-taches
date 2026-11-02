@@ -1,5 +1,5 @@
 import { supabase } from "./supabaseClient.js";
-import { createTasksFromLines, listTasks, setTag, setDone, deleteTask, setReminderTime } from "./tasks.js";
+import { createTasksFromLines, listTasks, setTag, setFields, setDone, deleteTask, setReminderTime } from "./tasks.js";
 import { fetchRoutine, setRoutineCheck, listRoutines } from "./routines.js";
 import {
   getCachedTasks, setCachedTasks, getPendingMutations, enqueueMutation, removeMutation,
@@ -62,6 +62,17 @@ export async function updateTag(id, tagName, value) {
     await setTag(id, tagName, value);
   } catch (_err) {
     const mutation = { type: "setTag", id, tagName, value };
+    await enqueueMutation(mutation);
+    const cached = await getCachedTasks();
+    await setCachedTasks(applyMutation(cached, mutation));
+  }
+}
+
+export async function updateFields(id, fields) {
+  try {
+    await setFields(id, fields);
+  } catch (_err) {
+    const mutation = { type: "setFields", id, fields };
     await enqueueMutation(mutation);
     const cached = await getCachedTasks();
     await setCachedTasks(applyMutation(cached, mutation));
@@ -239,6 +250,8 @@ async function flushTaskMutations(queue) {
         });
       } else if (resolved.type === "setTag") {
         await setTag(resolved.id, resolved.tagName, resolved.value);
+      } else if (resolved.type === "setFields") {
+        await setFields(resolved.id, resolved.fields);
       } else if (resolved.type === "setDone") {
         await setDone(resolved.id, resolved.done, resolved.completedAt);
       } else if (resolved.type === "delete") {

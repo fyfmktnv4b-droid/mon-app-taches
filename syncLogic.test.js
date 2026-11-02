@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyMutation, resolveMutationIds, buildOptimisticTasks, longestTooLongLine, MAX_TASK_LENGTH } from "./syncLogic.js";
+import { applyMutation, resolveMutationIds, buildOptimisticTasks, longestTooLongLine, MAX_TASK_LENGTH, importanceFields } from "./syncLogic.js";
+import { recoverChanges, validateChanges, undoChanges, applyChanges } from "./repriseLogic.js";
 
 function makeTask(overrides) {
   return {
@@ -127,4 +128,85 @@ test("longestTooLongLine reports the longest line over the limit", () => {
 test("longestTooLongLine counts characters like Postgres char_length (an emoji is one)", () => {
   assert.equal(longestTooLongLine("😀".repeat(MAX_TASK_LENGTH)), 0);
   assert.equal(longestTooLongLine("😀".repeat(MAX_TASK_LENGTH + 1)), MAX_TASK_LENGTH + 1);
+});
+
+// --- Jour d'entrée dans « Important » (important_since) ---
+
+const DAY1 = "2026-11-02";
+const DAY2 = "2026-11-03";
+const DAY3 = "2026-11-05";
+
+// Classe la tâche comme le font les boutons Important / Autre : une seule
+// mutation setFields, appliquée au cache comme le ferait la file hors-ligne.
+function classify(task, important, today) {
+  const mutation = { type: "setFields", id: task.id, fields: importanceFields(task, important, today) };
+  return applyMutation([task], mutation)[0];
+}
+
+test("importanceFields: entering Important (from À trier or Autres) stamps today", () => {
+  assert.deepEqual(importanceFields(makeTask({ important: null }), true, DAY1), { important: true, important_since: DAY1 });
+  assert.deepEqual(importanceFields(makeTask({ important: false }), true, DAY1), { important: true, important_since: DAY1 });
+  // Tâche créée hors-ligne par une ancienne version : colonne absente = pas Important.
+  const legacy = makeTask({});
+  delete legacy.important;
+  assert.deepEqual(importanceFields(legacy, true, DAY1), { important: true, important_since: DAY1 });
+});
+
+test("importanceFields: staying Important never touches important_since", () => {
+  const fields = importanceFields(makeTask({ important: true, important_since: DAY1 }), true, DAY2);
+  assert.deepEqual(fields, { important: true });
+  assert.equal("important_since" in fields, false);
+});
+
+test("importanceFields: leaving Important (to Autres or À trier) clears important_since", () => {
+  const task = makeTask({ important: true, important_since: DAY1 });
+  assert.deepEqual(importanceFields(task, false, DAY2), { important: false, important_since: null });
+  assert.deepEqual(importanceFields(task, null, DAY2), { important: null, important_since: null });
+  assert.deepEqual(importanceFields(makeTask({ important: null }), false, DAY2), { important: false, important_since: null });
+});
+
+test("applyMutation setFields writes every field of the mutation at once, on the matching task only", () => {
+  const tasks = [makeTask({ id: "a" }), makeTask({ id: "b" })];
+  const result = applyMutation(tasks, { type: "setFields", id: "a", fields: { important: true, important_since: DAY1 } });
+  assert.equal(result[0].important, true);
+  assert.equal(result[0].important_since, DAY1);
+  assert.deepEqual(result[1], tasks[1]);
+});
+
+test("resolveMutationIds maps a setFields on a task created offline", () => {
+  const idMap = new Map([["optimistic-1", "server-1"]]);
+  const mutation = { type: "setFields", id: "optimistic-1", fields: { important: true, important_since: DAY1 } };
+  assert.deepEqual(resolveMutationIds(mutation, idMap), { ...mutation, id: "server-1" });
+});
+
+test("important_since: Important, staying, through Autres and back restarts from the new day", () => {
+  let task = makeTask({ id: "a", important: null });
+  task = classify(task, true, DAY1);
+  assert.equal(task.important_since, DAY1);
+  task = classify(task, true, DAY2); // re-tap Important : rien ne bouge
+  assert.equal(task.important_since, DAY1);
+  task = classify(task, false, DAY2);
+  assert.equal(task.important_since, null);
+  task = classify(task, true, DAY3);
+  assert.equal(task.important_since, DAY3);
+});
+
+test("important_since: validating and undoing the validation leave it untouched", () => {
+  let task = classify(makeTask({ id: "a", important: null }), true, DAY1);
+  task = applyMutation([task], { type: "setDone", id: "a", done: true, completedAt: "2026-11-03T10:00:00Z" })[0];
+  assert.equal(task.important_since, DAY1);
+  task = applyMutation([task], { type: "setDone", id: "a", done: false, completedAt: null })[0];
+  assert.equal(task.important_since, DAY1);
+  assert.equal(task.important, true);
+});
+
+test("important_since: Récupérer, Valider and their undo on « À reprendre » leave it untouched", () => {
+  const before = classify(makeTask({ id: "a", important: null, last_triaged_on: null, reminder_time: null }), true, DAY1);
+  for (const changes of [recoverChanges(DAY3), validateChanges(DAY3, "Europe/Paris")]) {
+    assert.ok(changes.every(([field]) => field !== "important" && field !== "important_since"));
+    const after = applyChanges(before, changes);
+    assert.equal(after.important, true);
+    assert.equal(after.important_since, DAY1);
+    assert.equal(applyChanges(after, undoChanges(before, changes)).important_since, DAY1);
+  }
 });

@@ -169,7 +169,7 @@ export async function startServers() {
   }
 
   const DEFAULTS = {
-    tasks: () => ({ id: randomUUID(), urgent: null, important: null, done: false, reminder_time: null, created_at: new Date().toISOString(), completed_at: null, updated_at: new Date().toISOString() }),
+    tasks: () => ({ id: randomUUID(), urgent: null, important: null, important_since: null, done: false, reminder_time: null, created_at: new Date().toISOString(), completed_at: null, updated_at: new Date().toISOString() }),
     daily_routines: () => ({ checks: {}, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }),
     push_subscriptions: () => ({ id: randomUUID(), device_label: null, created_at: new Date().toISOString() }),
     user_settings: () => ({}),
