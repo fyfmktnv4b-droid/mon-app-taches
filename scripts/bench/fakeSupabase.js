@@ -174,6 +174,7 @@ export async function startServers() {
     push_subscriptions: () => ({ id: randomUUID(), device_label: null, created_at: new Date().toISOString() }),
     user_settings: () => ({}),
   };
+  const ROUTINE_KEYS = ["wake", "wash", "meditate", "pray", "gym", "steps", "skipped"];
   const CONFLICT_KEYS = { tasks: ["id"], daily_routines: ["user_id", "local_date"], push_subscriptions: ["endpoint"], user_settings: ["user_id"] };
 
   function handleRest(req, res, url, body, userId) {
@@ -183,6 +184,10 @@ export async function startServers() {
     const wantsRows = prefer.includes("return=representation");
 
     if (parts[3] === "rpc" && parts[4] === "set_routine_check" && req.method === "POST") {
+      // Mêmes refus que la vraie fonction (migration 0002) : clé hors liste
+      // blanche, valeur absente. Un false explicite est accepté.
+      if (!ROUTINE_KEYS.includes(body?.p_key)) return json(res, 400, { code: "P0001", message: `clé de routine inconnue: ${body?.p_key}`, details: null, hint: null });
+      if (typeof body.p_value !== "boolean") return json(res, 400, { code: "P0001", message: "valeur de routine manquante", details: null, hint: null });
       let row = db.daily_routines.find((r) => r.user_id === userId && r.local_date === body.p_local_date);
       if (!row) db.daily_routines.push(row = { ...DEFAULTS.daily_routines(), user_id: userId, local_date: body.p_local_date });
       row.checks = { ...row.checks, [body.p_key]: body.p_value };

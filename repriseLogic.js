@@ -1,4 +1,5 @@
 import { deviceTimeZone, localDateString } from "./localDate.js";
+import { DEFAULT_HABITS, expectedHabits } from "./habits.js";
 
 // Écran « À reprendre aujourd'hui » : tâches Important / Autres pas terminées,
 // créées avant aujourd'hui (date LOCALE), et pas déjà récupérées aujourd'hui.
@@ -132,6 +133,18 @@ export async function writeChangesInOrder(id, changes, deps) {
 }
 
 // ---------------------------------------------------------------------------
+// Carte « Hier » : habitudes attendues hier (habits.js) dont la case n'a reçu
+// AUCUNE réponse. true = fait, false = « Non » : les deux closent la question.
+// Pas de ligne pour hier (checks absent ou vide) = aucune réponse : on demande.
+// « skipped » est ignoré : il ne concerne que l'écran de la routine du matin,
+// et ne verrouille ni la salle ni les pas.
+// ---------------------------------------------------------------------------
+
+export function yesterdayQuestions(yesterday, checks, habits = DEFAULT_HABITS) {
+  return expectedHabits(yesterday, habits).filter((habit) => typeof checks?.[habit.key] !== "boolean");
+}
+
+// ---------------------------------------------------------------------------
 // Textes
 // ---------------------------------------------------------------------------
 
@@ -145,6 +158,15 @@ export function introSentence(count) {
   return count === 1
     ? "Une tâche n'a pas été terminée. Choisis ce que tu en fais."
     : `${numberWord(count)} tâches n'ont pas été terminées. Choisis ce que tu en fais, une par une.`;
+}
+
+// En tête de l'écran : la phrase des tâches s'il y en a, sinon celle de la
+// carte « Hier » seule.
+export function screenIntro(taskCount, questionCount) {
+  if (taskCount > 0) return introSentence(taskCount);
+  return questionCount === 1
+    ? "Une petite question sur hier."
+    : `${numberWord(questionCount)} petites questions sur hier.`;
 }
 
 export function counterLabel(sortedCount, total) {
@@ -178,12 +200,23 @@ export function confirmationLabel(action, task) {
   return "Abandonnée";
 }
 
+export function habitQuestion(question) {
+  return question.session
+    ? `Hier, ${question.label.toLowerCase()} : ${question.session} ?`
+    : `Hier, ${question.label} ?`;
+}
+
+export function habitConfirmation(done) {
+  return done ? "Noté : fait hier, bravo" : "Noté. Aujourd'hui est un nouveau jour";
+}
+
 // Récapitulatif de « Tout est trié », ex. « 2 récupérées · 1 validée ».
-export function recapSummary({ recover = 0, validate = 0, abandon = 0 }) {
+export function recapSummary({ recover = 0, validate = 0, abandon = 0, answer = 0 }) {
   const part = (n, one, many) => (n ? `${n} ${n > 1 ? many : one}` : null);
   return [
     part(recover, "récupérée", "récupérées"),
     part(validate, "validée", "validées"),
     part(abandon, "abandonnée", "abandonnées"),
+    part(answer, "réponse sur hier", "réponses sur hier"),
   ].filter(Boolean).join(" · ");
 }

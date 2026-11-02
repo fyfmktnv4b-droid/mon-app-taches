@@ -10,7 +10,7 @@ const TASK = "Tâche de fumée du banc";
 
 export async function run({ page, fake, appOrigin, log }) {
   fake.setMode("online");
-  fake.seedUser({ email: EMAIL, password: PASSWORD });
+  const user = fake.seedUser({ email: EMAIL, password: PASSWORD });
   const visible = (id) => `!document.getElementById(${JSON.stringify(id)}).hidden`;
 
   await page.goto(`${appOrigin}/`);
@@ -34,8 +34,10 @@ export async function run({ page, fake, appOrigin, log }) {
 
   await page.tapSelector("#welcome-continue");
   // Routine du matin et écran « À reprendre » ne sont proposés que selon les données.
+  // Utilisateur neuf : rien de coché hier, donc la carte « Hier » s'ouvre ; on la passe.
   await page.waitFor(`(() => {
     if (${visible("routine")}) document.getElementById("routine-skip").click();
+    if (${visible("reprise")}) document.querySelector("#reprise [data-exit]")?.click();
     return ${visible("app")};
   })()`, { label: "l'écran principal" });
   log("écran principal affiché");
@@ -47,6 +49,6 @@ export async function run({ page, fake, appOrigin, log }) {
   await page.waitFor(`document.getElementById("main-view").textContent.includes(${JSON.stringify(TASK)})`, { label: "la tâche dans l'écran principal" });
   const stored = fake.db.tasks.filter((t) => t.text === TASK);
   assert.equal(stored.length, 1, "la tâche n'est pas arrivée dans le faux Supabase");
-  assert.equal(stored[0].user_id, [...fake.db.user_settings][0].user_id);
+  assert.equal(stored[0].user_id, user.id);
   log("tâche créée à l'écran et reçue par le faux Supabase");
 }

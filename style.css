@@ -668,6 +668,17 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
   background: transparent; color: var(--sage-deep); font-size: 14px; font-weight: 600; text-decoration: underline;
 }
 .reprise-undo:hover { background: transparent; color: var(--ink); }
+/* Carte « Hier » : habitudes d'hier sans réponse. Ton doux, aucun rouge. */
+.reprise-pill[data-box="hier"] { background: var(--done-bg); color: var(--done-text); }
+.hier-item { margin-top: 12px; }
+.hier-question { margin: 0 0 10px; font-size: 17px; font-weight: 600; line-height: 1.35; color: var(--ink); }
+.hier-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.hier-btn { min-height: 48px; padding: 8px; border-radius: 14px; font-size: 15px; font-weight: 600; }
+.hier-btn[data-answer="yes"] { background: var(--sage-deep); color: var(--cream); border: 1px solid var(--sage-deep); }
+.hier-btn[data-answer="yes"]:hover { background: var(--sage-dark); }
+.hier-btn[data-answer="no"] { background: transparent; color: var(--ink-muted); border: 1px solid var(--border-warm); }
+.hier-btn[data-answer="no"]:hover { background: var(--card); color: var(--ink); }
+.hier-card .hier-done { margin-top: 12px; }
 .reprise-footer {
   position: sticky; bottom: 0;
   display: flex; flex-direction: column; gap: 10px;
