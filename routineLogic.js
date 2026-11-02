@@ -1,6 +1,9 @@
 // Fonctions pures de la routine quotidienne. Aucun accès réseau, aucun DOM :
 // tout ce qui décide quoi afficher et comment fusionner les coches vit ici et
 // est testé unitairement.
+import { habitByKey, sessionLabel, weekdayFromLocalDate } from "./habits.js";
+
+export { weekdayFromLocalDate };
 
 export const MORNING_KEYS = ["wake", "wash", "meditate", "pray"];
 export const DAY_KEYS = ["gym", "steps"];
@@ -17,22 +20,8 @@ export const MORNING_LABELS = {
   pray: "Prier",
 };
 
-// Index = jour de la semaine (0 = dimanche), comme dayScenes.js.
-const PLANNED_SESSIONS = {
-  1: "Haut du corps A",
-  3: "Jambes",
-  5: "Haut du corps B",
-};
-
 export function isCheckKey(key) {
   return CHECK_KEYS.includes(key);
-}
-
-// Jour de la semaine déduit de la chaîne "YYYY-MM-DD" elle-même, en la lisant
-// en UTC : le résultat ne dépend donc pas du fuseau de la machine, et reste
-// cohérent avec la date qui sert de clé à la ligne en base.
-export function weekdayFromLocalDate(localDate) {
-  return new Date(`${localDate}T00:00:00Z`).getUTCDay();
 }
 
 // kind "rest" => pas de case du tout, juste le texte (dimanche).
@@ -41,7 +30,8 @@ export function weekdayFromLocalDate(localDate) {
 export function plannedSession(localDate) {
   const weekday = weekdayFromLocalDate(localDate);
   if (weekday === 0) return { kind: "rest", label: "Repos" };
-  const planned = PLANNED_SESSIONS[weekday];
+  // Séances du programme : une seule liste, dans habits.js.
+  const planned = sessionLabel(habitByKey("gym"), localDate);
   if (planned) return { kind: "planned", label: planned };
   return { kind: "optional", label: "Facultative" };
 }

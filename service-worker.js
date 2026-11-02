@@ -37,6 +37,7 @@ const ASSETS = [
   "./dayScenes.js",
   "./localDate.js",
   "./routineLogic.js",
+  "./habits.js",
   "./routines.js",
   "./routineBlock.js",
   "./splashLogic.js",
