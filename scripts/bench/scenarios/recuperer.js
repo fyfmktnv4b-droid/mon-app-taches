@@ -4,7 +4,9 @@
 //   - Important d'une semaine passée -> « À trier » (important, important_since,
 //     rappel effacés, last_triaged_on = aujourd'hui), « Annuler » restaure tout ;
 //   - Autres d'une semaine passée -> retour dans « Autres », comme avant ;
-//   - Important de la semaine en cours -> retour dans « Important », important_since gardé.
+//   - Important de la semaine en cours -> retour dans « Important », important_since gardé ;
+//   - serveur coupé : « Récupérer » met UNE mutation setFields à 4 champs en
+//     file, rejouée telle quelle contre le faux serveur au retour du réseau.
 import assert from "node:assert/strict";
 import { localDateString } from "../../../localDate.js";
 import { weekStart, addDays } from "../../../bilanLogic.js";
@@ -111,8 +113,41 @@ export async function run({ page, fake, appOrigin, log }) {
     );
     log("« Annuler » : important, important_since, rappel et last_triaged_on restaurés");
 
-    // 3. On récupère pour de bon, plus l'Autre et (si elle existe) celle de la semaine.
+    // 3. Serveur coupé : « Récupérer » part en file (une seule mutation
+    //    setFields à 4 champs), puis est rejouée contre le faux serveur.
+    fake.setMode("down");
     await page.tapSelector(card(oldImportant.id, ' [data-action="recover"]'));
+    await page.waitFor(`document.querySelector('${card(oldImportant.id, " .reprise-done-text")}')?.textContent === "Récupérée : elle va dans « À trier »"`, { label: "la confirmation « À trier » (serveur coupé)" });
+    const readQueue = () => page.evaluate(`(async () => {
+      const db = await new Promise((ok, ko) => { const r = indexedDB.open("mon-app-taches"); r.onsuccess = () => ok(r.result); r.onerror = ko; });
+      const rows = await new Promise((ok, ko) => { const r = db.transaction("pending_mutations").objectStore("pending_mutations").getAll(); r.onsuccess = () => ok(r.result); r.onerror = ko; });
+      db.close();
+      return rows.map(({ queueId, ...m }) => m);
+    })()`);
+    const queueEnd = Date.now() + 5000;
+    let queue = await readQueue();
+    while (queue.length === 0 && Date.now() < queueEnd) {
+      await new Promise((r) => setTimeout(r, 50));
+      queue = await readQueue();
+    }
+    assert.deepEqual(queue, [{
+      type: "setFields", id: oldImportant.id,
+      fields: { important: null, important_since: null, reminder_time: null, last_triaged_on: today },
+    }], "une seule mutation setFields à 4 champs était attendue en file");
+    assert.equal(row(oldImportant).important, true, "rien ne doit avoir atteint le serveur coupé");
+    log("serveur coupé : une seule mutation setFields à 4 champs en file");
+
+    fake.setMode("online");
+    await page.evaluate(`window.dispatchEvent(new Event("online")); true`);
+    await until(() => row(oldImportant).important === null, "le rejeu de la file");
+    assert.deepEqual(
+      (({ important, important_since, reminder_time, last_triaged_on }) => ({ important, important_since, reminder_time, last_triaged_on }))(row(oldImportant)),
+      { important: null, important_since: null, reminder_time: null, last_triaged_on: today },
+    );
+    assert.deepEqual(await readQueue(), [], "la file doit être vide après le rejeu");
+    log("rejeu contre le faux serveur : les 4 champs écrits ensemble, file vide");
+
+    // 4. L'Autre et (si elle existe) celle de la semaine, en ligne.
     await page.tapSelector(card(oldOther.id, ' [data-action="recover"]'));
     await page.waitFor(`document.querySelector('${card(oldOther.id, " .reprise-done-text")}')?.textContent === "Récupérée : retourne dans « Autres »"`, { label: "la confirmation « Autres »" });
     if (thisWeek) {
@@ -124,7 +159,7 @@ export async function run({ page, fake, appOrigin, log }) {
     if (thisWeek) assert.deepEqual([row(thisWeek).important, row(thisWeek).important_since], [true, monday]);
     log("Autres de la semaine passée et Important de la semaine : comportement inchangé");
 
-    // 4. Sortie : la tâche renvoyée est dans « À trier » sur l'écran principal.
+    // 5. Sortie : la tâche renvoyée est dans « À trier » sur l'écran principal.
     await page.tapSelector("#reprise [data-exit]");
     await page.waitFor(visible("app"), { label: "l'écran principal" });
     await page.waitFor(`!!document.querySelector(".unsorted-list") && document.querySelector(".unsorted-list").textContent.includes(${JSON.stringify(oldImportant.text)})`, { label: "la tâche dans « À trier »" });
