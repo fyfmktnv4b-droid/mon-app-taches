@@ -99,6 +99,7 @@
   --done-border: #C9D6E0;
   --done-text: #3E566B;
   --done-accent: #6B8CA6;
+  --pink-dusty: #B8918C; /* rose poudré foncé : « pas faites » du bilan, à côté de --pink-soft (en retard) */
 }
 
 * {
@@ -199,6 +200,8 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 }
 .menu-tile:hover { background: var(--border-warm); }
 .menu-tile svg { width: 26px; height: 26px; color: var(--sage-dark); }
+/* Tuile pleine largeur en tête du menu (Bilan de la semaine). */
+.menu-tile-wide { grid-column: 1 / -1; flex-direction: row; min-height: 60px; gap: 12px; }
 .menu-account {
   display: flex; align-items: center; gap: 12px; width: 100%; margin-top: 12px; padding: 10px 8px;
   background: transparent; color: var(--ink); border-radius: 12px; font-weight: 500; font-size: 15px;
@@ -711,6 +714,94 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 .reprise-banner-sub { font-size: 14px; font-weight: 500; color: var(--ink-muted); }
 
 /* ---------------------------------------------------------------------
+   Écran « Bilan de la semaine » (bilanScreen.js) : lecture seule. Aucun
+   rouge : « en retard » et « pas faites » sont en rose poudré. La barre est
+   un SVG dont les couleurs viennent de ces classes (aucun style en ligne).
+   ------------------------------------------------------------------- */
+#bilan {
+  min-height: 100vh; min-height: 100dvh;
+  max-width: 560px; margin: 0 auto;
+  display: flex; flex-direction: column;
+  background: var(--cream);
+}
+#bilan[hidden] { display: none; }
+/* display: block : neutralise la règle générale « header » (en-tête en ligne de l'écran principal). */
+.bilan-head { display: block; padding: calc(20px + env(safe-area-inset-top)) 20px 6px; }
+.bilan-date {
+  margin: 0; font-size: 13px; font-weight: 600; color: var(--sage-dark);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.bilan-title { margin: 4px 0 0; font-size: 30px; font-weight: 700; line-height: 1.15; color: var(--ink); }
+.bilan-list { flex: 1; display: flex; flex-direction: column; gap: 12px; padding: 14px 16px 18px; }
+
+.bilan-hero { background: var(--sage-deep); color: var(--cream); border-radius: 22px; padding: 20px 18px; }
+.bilan-hero-title { margin: 0 0 14px; font-size: 22px; font-weight: 700; line-height: 1.25; }
+.bilan-bar { height: 12px; border-radius: 999px; overflow: hidden; }
+.bilan-bar svg { display: block; width: 100%; height: 100%; }
+.bilan-track { fill: var(--sage-dark); stroke: none; }
+.bilan-seg { stroke: var(--sage-deep); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.bilan-seg[data-seg="onTime"], .bilan-swatch[data-seg="onTime"] { fill: var(--sage); background: var(--sage); }
+.bilan-seg[data-seg="late"], .bilan-swatch[data-seg="late"] { fill: var(--pink-soft); background: var(--pink-soft); }
+.bilan-seg[data-seg="undated"], .bilan-swatch[data-seg="undated"] { fill: var(--done-accent); background: var(--done-accent); }
+.bilan-seg[data-seg="notDone"], .bilan-swatch[data-seg="notDone"] { fill: var(--pink-dusty); background: var(--pink-dusty); }
+.bilan-swatch { flex: none; display: block; width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--border-warm); }
+
+.bilan-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.bilan-tile {
+  min-width: 0; padding: 12px 10px;
+  background: var(--card); border: 1px solid var(--border-warm); border-radius: 18px;
+}
+.bilan-tile-count { margin: 8px 0 0; font-size: 28px; font-weight: 800; line-height: 1; color: var(--ink); }
+.bilan-tile-label { margin: 6px 0 0; font-size: 13px; font-weight: 600; line-height: 1.25; color: var(--ink); }
+.bilan-tile-detail { margin: 3px 0 0; font-size: 12px; line-height: 1.3; color: var(--ink-muted); }
+.bilan-undated {
+  display: flex; align-items: center; gap: 10px; margin: 0; padding: 10px 14px;
+  font-size: 14px; line-height: 1.35; color: var(--ink-muted);
+  border: 1px dashed var(--border-warm); border-radius: 14px;
+}
+.bilan-undated strong { color: var(--ink); }
+
+.bilan-habit { background: var(--card); border: 1px solid var(--border-warm); border-radius: 18px; padding: 16px; }
+.bilan-habit-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.bilan-habit-label { margin: 0; font-size: 17px; font-weight: 700; color: var(--ink); }
+.bilan-habit-count { margin: 0; font-size: 22px; font-weight: 800; color: var(--sage-deep); }
+.bilan-habit-off { margin: 10px 0 0; font-size: 14px; color: var(--ink-muted); }
+.bilan-days {
+  list-style: none; margin: 14px 0 0; padding: 0 0 8px;
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;
+}
+.bilan-day {
+  position: relative; justify-self: center; width: 100%; max-width: 40px; aspect-ratio: 1;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; font-size: 13px; font-weight: 700;
+}
+.bilan-day[data-state="done"] { background: var(--sage-deep); color: var(--cream); }
+.bilan-day[data-state="missed"] { background: var(--cream); color: var(--ink-muted); border: 1.5px solid var(--border-warm); }
+.bilan-day[data-state="today"] { background: transparent; color: var(--ink); border: 2px dashed var(--ink-muted); }
+.bilan-day[data-state="future"] { background: var(--border-warm); color: var(--ink-muted); opacity: 0.6; }
+/* Jour prévu (ex. salle : lundi, mercredi, vendredi) : petit point discret dessous. */
+.bilan-day[data-official="true"]::after {
+  content: ""; position: absolute; bottom: -8px; left: 50%;
+  width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--sage);
+}
+.bilan-note { margin: -4px 4px 0; font-size: 12.5px; line-height: 1.35; color: var(--ink-muted); }
+.bilan-end { margin: 6px 8px 0; font-size: 15px; line-height: 1.45; color: var(--ink-muted); text-align: center; }
+.bilan-footer {
+  position: sticky; bottom: 0;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: var(--cream); border-top: 1px solid var(--border-warm);
+}
+.bilan-close {
+  width: 100%; min-height: 52px; border-radius: 14px; border: none;
+  background: var(--sage-deep); color: var(--cream); font-size: 16px; font-weight: 700;
+}
+/* Texte lu par les lecteurs d'écran seulement (état de chaque jour). */
+.bilan-sr {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------
    Mode hors-ligne (app.js, updateOfflineBanner) : bandeau informatif, pas
    d'alerte. Il est dans le flux, prend la zone sûre du haut de l'iPhone, et
    la classe html.offline-mode raccourcit les écrans d'autant : rien n'est
@@ -738,9 +829,11 @@ html.offline-mode #app,
 html.offline-mode #welcome,
 html.offline-mode #routine { height: calc(100dvh - var(--offline-banner-h)); }
 html.offline-mode #reprise { min-height: calc(100dvh - var(--offline-banner-h)); }
+html.offline-mode #bilan { min-height: calc(100dvh - var(--offline-banner-h)); }
 /* La zone sûre est déjà prise par le bandeau. */
 html.offline-mode header { padding-top: 14px; }
-html.offline-mode .reprise-head { padding-top: 20px; }
+html.offline-mode .reprise-head,
+html.offline-mode .bilan-head { padding-top: 20px; }
 html.offline-mode #menu-panel { top: 84px; }
 
 /* Message de l'écran de connexion quand la session a expiré : informatif. */

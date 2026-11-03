@@ -44,6 +44,8 @@ const ASSETS = [
   "./version.js",
   "./noZoom.js",
   "./bilanLogic.js",
+  "./bilan.js",
+  "./bilanScreen.js",
   "./repriseLogic.js",
   "./reprise.js",
   "./repriseScreen.js",

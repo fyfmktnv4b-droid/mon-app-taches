@@ -20,6 +20,7 @@ import "./noZoom.js";
 import { pendingReprise, bannerTitle, bannerSubtitle } from "./repriseLogic.js";
 import { loadTasksForReprise, loadYesterdayQuestions } from "./reprise.js";
 import { openRepriseScreen, handledIdsFor, abandonedIds } from "./repriseScreen.js";
+import { openBilanScreen } from "./bilanScreen.js";
 import { MORNING_KEYS, MORNING_LABELS, SKIP_KEY, isChecked, isMorningDone, shouldShowRoutine } from "./routineLogic.js";
 
 if ("serviceWorker" in navigator) {
@@ -46,6 +47,7 @@ const routineSkip = document.getElementById("routine-skip");
 const openRoutine = document.getElementById("open-routine");
 const appSection = document.getElementById("app");
 const repriseSection = document.getElementById("reprise");
+const bilanSection = document.getElementById("bilan");
 const authForm = document.getElementById("auth-form");
 const authError = document.getElementById("auth-error");
 const authInfo = document.getElementById("auth-info");
@@ -66,6 +68,7 @@ const captureForm = document.getElementById("capture-form");
 const captureInput = document.getElementById("capture-input");
 const navHistory = document.getElementById("nav-history");
 const navSettings = document.getElementById("nav-settings");
+const navBilan = document.getElementById("nav-bilan");
 
 let currentView = "main";
 let unsortedOpen = false; // bandeau « À trier » déplié ?
@@ -127,6 +130,7 @@ function showWelcome() {
   routineSection.hidden = true;
   appSection.hidden = true;
   repriseSection.hidden = true;
+  bilanSection.hidden = true;
   welcomeSection.hidden = false;
   authInfo.textContent = "";
   updateOfflineBanner();
@@ -165,6 +169,7 @@ async function enterApp() {
   routineSection.hidden = true;
   authSection.hidden = true;
   repriseSection.hidden = true;
+  bilanSection.hidden = true;
   appSection.hidden = false;
   mainView.innerHTML = "";
   try {
@@ -181,6 +186,7 @@ function showAuth() {
   routineSection.hidden = true;
   appSection.hidden = true;
   repriseSection.hidden = true;
+  bilanSection.hidden = true;
   authSection.hidden = false;
   mainView.innerHTML = "";
   updateOfflineBanner();
@@ -236,6 +242,7 @@ function showRoutineScreen() {
   authSection.hidden = true;
   appSection.hidden = true;
   repriseSection.hidden = true;
+  bilanSection.hidden = true;
   routineSection.hidden = false;
   routineSkip.disabled = false;
   renderRoutineChecks();
@@ -305,11 +312,24 @@ function showReprise(tasks, hier = { yesterday: null, questions: [] }) {
   routineSection.hidden = true;
   authSection.hidden = true;
   appSection.hidden = true;
+  bilanSection.hidden = true;
   repriseSection.hidden = false;
   openRepriseScreen(repriseSection, {
     tasks, habitQuestions: hier.questions, yesterday: hier.yesterday,
     today: todayDateString(), dateLabel: formatHeaderDate(new Date()), onExit: enterApp,
   });
+}
+
+// Bilan de la semaine : plein écran, en lecture seule, recalculé à chaque
+// ouverture. « Fermer » ramène à l'écran d'où il a été ouvert.
+function showBilan() {
+  welcomeSection.hidden = true;
+  routineSection.hidden = true;
+  authSection.hidden = true;
+  appSection.hidden = true;
+  repriseSection.hidden = true;
+  bilanSection.hidden = false;
+  openBilanScreen(bilanSection, { excludedIds: abandonedIds, onClose: enterApp });
 }
 
 // Le champ grandit avec le texte (une tâche par ligne), jusqu'à ~4 lignes,
@@ -869,7 +889,10 @@ menuPanel.addEventListener("click", (event) => {
 // redessine au retour au premier plan, ce qui sort les tâches d'hier de
 // « Terminé » (elles passent dans l'Historique).
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && !appSection.hidden) render();
+  if (document.visibilityState !== "visible") return;
+  if (!appSection.hidden) render();
+  // Bilan resté ouvert : nouveau jour, dimanche 20:00, données d'un autre appareil.
+  else if (!bilanSection.hidden) showBilan();
 });
 
 function showView(view) {
@@ -879,6 +902,7 @@ function showView(view) {
 
 navHistory.addEventListener("click", () => showView("history"));
 navSettings.addEventListener("click", () => showView("settings"));
+navBilan.addEventListener("click", showBilan);
 
 authForm.addEventListener("submit", async (event) => {
   event.preventDefault();
