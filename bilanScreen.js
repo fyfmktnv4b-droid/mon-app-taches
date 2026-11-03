@@ -3,12 +3,13 @@
 // données : bilan.js.
 import { localDateString } from "./localDate.js";
 import {
-  weekSummary, barSegments, habitsWeek, weekRangeLabel, titleLabel, othersDetail, notDoneLabel,
+  isClosingTime, weekSummary, barSegments, habitsWeek, weekRangeLabel, titleLabel, othersDetail, notDoneLabel,
   habitCountLabel, barAriaLabel, endMessage,
 } from "./bilanLogic.js";
 import { DEFAULT_HABITS } from "./habits.js";
 import { loadLocalTasks, loadFreshTasks, loadWeekHabits } from "./bilan.js";
 
+const LOADING = "Chargement…";
 const HABITS_OFFLINE = "Indisponible hors-ligne";
 const HABITS_FROM_CACHE = "Hors-ligne : d'après cet appareil";
 const UNDATED_HINT = "Terminées avant que l'app note les dates";
@@ -64,7 +65,10 @@ function onClick(event) {
 
 function render() {
   const { now, today, tasks, habits, excludedIds } = state;
-  const summary = weekSummary(tasks ?? [], now, undefined, excludedIds);
+  // Tâches pas encore lues (tout début de l'ouverture) : aucun chiffre ni
+  // phrase inventés, seulement « Chargement… » et des tirets.
+  const summary = tasks === null ? null : weekSummary(tasks, now, undefined, excludedIds);
+  const end = summary ? endMessage(summary) : null;
   root.innerHTML = `
     <header class="bilan-head">
       <p class="bilan-date">${escapeHtml(weekRangeLabel(today))}</p>
@@ -72,10 +76,10 @@ function render() {
     </header>
     <div class="bilan-list" ${tasks === null ? 'aria-busy="true"' : ""}>
       ${heroHtml(summary)}
-      ${tilesHtml(summary)}
-      ${summary.undated ? undatedHtml(summary.undated) : ""}
+      ${tilesHtml(summary, isClosingTime(now))}
+      ${summary?.undated ? undatedHtml(summary.undated) : ""}
       ${habitsHtml(habits, today)}
-      <p class="bilan-end">${escapeHtml(endMessage(summary))}</p>
+      ${end ? `<p class="bilan-end">${escapeHtml(end)}</p>` : ""}
     </div>
     <footer class="bilan-footer">
       <button type="button" class="bilan-close" data-close>Fermer</button>
@@ -85,15 +89,15 @@ function render() {
 
 // Barre : SVG à attributs (aucun style en ligne), couleurs par classes CSS.
 function heroHtml(summary) {
-  const segments = barSegments(summary)
+  const segments = (summary ? barSegments(summary) : [])
     .filter((s) => s.width > 0)
     .map((s) => `<rect class="bilan-seg" data-seg="${s.key}" x="${s.x}" y="0" width="${s.width}" height="10"/>`)
     .join("");
   return `
     <section class="bilan-hero">
-      <p class="bilan-hero-title">${escapeHtml(titleLabel(summary))}</p>
+      <p class="bilan-hero-title">${escapeHtml(summary ? titleLabel(summary) : LOADING)}</p>
       <div class="bilan-bar">
-        <svg viewBox="0 0 100 10" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(barAriaLabel(summary))}">
+        <svg viewBox="0 0 100 10" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(summary ? barAriaLabel(summary) : LOADING)}">
           <rect class="bilan-track" x="0" y="0" width="100" height="10"/>${segments}
         </svg>
       </div>
@@ -110,12 +114,14 @@ function tileHtml(key, count, label, detail) {
       </div>`;
 }
 
-function tilesHtml(summary) {
+function tilesHtml(summary, closing) {
+  const count = (key) => (summary ? summary[key] : "–");
+  const detail = (key) => (summary ? othersDetail(summary[key]) : null);
   return `
     <section class="bilan-tiles">
-      ${tileHtml("onTime", summary.onTime, "Faites à temps", othersDetail(summary.onTimeOthers))}
-      ${tileHtml("late", summary.late, "Faites en retard", null)}
-      ${tileHtml("notDone", summary.notDone, notDoneLabel(summary.closing), othersDetail(summary.notDoneOthers))}
+      ${tileHtml("onTime", count("onTime"), "Faites à temps", detail("onTimeOthers"))}
+      ${tileHtml("late", count("late"), "Faites en retard", null)}
+      ${tileHtml("notDone", count("notDone"), notDoneLabel(closing), detail("notDoneOthers"))}
     </section>`;
 }
 
@@ -131,7 +137,7 @@ function habitsHtml(habits, today) {
   // Avant la réponse (2 s au plus) et hors-ligne sans cache complet : les
   // cartes gardent leur titre, sans chiffre inventé.
   if (!habits || habits.source === "unavailable") {
-    const message = habits ? HABITS_OFFLINE : "Chargement…";
+    const message = habits ? HABITS_OFFLINE : LOADING;
     return habitsWeek({}, today, DEFAULT_HABITS).map((habit) => `
       <section class="bilan-habit" data-habit="${escapeHtml(habit.key)}" ${habits ? "" : 'aria-busy="true"'}>
         <div class="bilan-habit-head">

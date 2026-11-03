@@ -308,7 +308,7 @@ test("texts: week range, title, details, labels", () => {
   assert.equal(weekRangeLabel("2026-12-30"), "28 déc. – 3 janv.");
   assert.equal(titleLabel({ done: 3, total: 5 }), "3 sur 5 tâches terminées");
   assert.equal(titleLabel({ done: 0, total: 1 }), "0 sur 1 tâche terminée");
-  assert.equal(titleLabel({ done: 0, total: 0 }), "0 sur 0 tâche terminée");
+  assert.equal(titleLabel({ done: 0, total: 0 }), "Aucune tâche pour l'instant", "semaine vide : jamais « 0 sur 0 »");
   assert.equal(othersDetail(2), "dont 2 Autres");
   assert.equal(othersDetail(0), null);
   assert.equal(habitCountLabel({ done: 2, target: 7 }), "2 sur 7");
@@ -319,12 +319,13 @@ test("texts: the bar reads its numbers aloud", () => {
     "2 faites à temps, 1 faites en retard, 1 pas encore faites");
   assert.equal(barAriaLabel({ total: 3, onTime: 1, late: 0, undated: 1, notDone: 1, closing: true }),
     "1 faites à temps, 0 faites en retard, 1 sans date, 1 pas faites");
-  assert.equal(barAriaLabel({ total: 0 }), "Aucune tâche cette semaine");
+  assert.equal(barAriaLabel({ total: 0 }), "Aucune tâche pour l'instant");
 });
 
 test("texts: end message — all done wins, even after Sunday 20:00", () => {
-  assert.equal(endMessage({ total: 0, done: 0, closing: false }), "Aucune tâche cette semaine.");
-  assert.equal(endMessage({ total: 0, done: 0, closing: true }), "Aucune tâche cette semaine.");
+  // Semaine vide : la carte sombre le dit déjà, pas de phrase en bas.
+  assert.equal(endMessage({ total: 0, done: 0, closing: false }), null);
+  assert.equal(endMessage({ total: 0, done: 0, closing: true }), null);
   assert.equal(endMessage({ total: 3, done: 3, closing: true }), "Belle semaine. Tout est fait.");
   assert.equal(endMessage({ total: 3, done: 3, closing: false }), "Belle semaine. Tout est fait.");
   assert.equal(endMessage({ total: 3, done: 1, closing: true }), "Semaine terminée. Un nouveau bilan commence lundi.");

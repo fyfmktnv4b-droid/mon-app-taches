@@ -215,7 +215,11 @@ export function weekRangeLabel(today) {
   return `${first} – ${dayMonth(end)}`;
 }
 
+export const NO_TASK_YET = "Aucune tâche pour l'instant";
+
+// Semaine sans aucune tâche : la carte le dit en mots, pas « 0 sur 0 ».
 export function titleLabel({ done, total }) {
+  if (total === 0) return NO_TASK_YET;
   return `${done} sur ${total} ${total > 1 ? "tâches terminées" : "tâche terminée"}`;
 }
 
@@ -233,7 +237,7 @@ export function habitCountLabel({ done, target }) {
 
 // Lu par les lecteurs d'écran à la place de la barre.
 export function barAriaLabel(summary) {
-  if (summary.total === 0) return "Aucune tâche cette semaine";
+  if (summary.total === 0) return NO_TASK_YET;
   return [
     `${summary.onTime} faites à temps`,
     `${summary.late} faites en retard`,
@@ -242,9 +246,10 @@ export function barAriaLabel(summary) {
   ].join(", ");
 }
 
-// « Tout est fait » l'emporte, même après dimanche 20:00.
+// « Tout est fait » l'emporte, même après dimanche 20:00. Semaine sans tâche :
+// aucune phrase (la carte sombre le dit déjà), donc null.
 export function endMessage({ total, done, closing }) {
-  if (total === 0) return "Aucune tâche cette semaine.";
+  if (total === 0) return null;
   if (done === total) return "Belle semaine. Tout est fait.";
   if (closing) return "Semaine terminée. Un nouveau bilan commence lundi.";
   return "Chaque tâche faite compte. La semaine n'est pas finie.";

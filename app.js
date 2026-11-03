@@ -145,7 +145,8 @@ function showWelcome() {
   const { quote, author, verse, reference } = pickQuoteForDate(now);
 
   welcomeDay.textContent = scene.label;
-  welcomeQuote.textContent = `« ${quote} » — ${author}`;
+  // Espaces insécables à l'intérieur des guillemets : jamais « ou » seul en bout de ligne.
+  welcomeQuote.textContent = `«\u00A0${quote}\u00A0» — ${author}`;
   welcomeVerse.textContent = `${verse} (${reference})`;
   // Never let both text blocks sit at full size together — whichever is
   // longer goes compact, so the day title and scene image (both fixed)
