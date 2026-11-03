@@ -145,8 +145,7 @@ function habitsHtml(habits, today) {
 }
 
 function habitCardHtml(habit) {
-  // Jours officiels marqués d'un point, seulement s'ils se distinguent des autres.
-  const distinguish = habit.days.some((d) => !d.official);
+  const distinguish = habit.marksOfficialDays; // voir bilanLogic.js
   return `
       <section class="bilan-habit" data-habit="${escapeHtml(habit.key)}">
         <div class="bilan-habit-head">

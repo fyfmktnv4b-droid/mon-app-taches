@@ -171,6 +171,10 @@ export function habitWeek(habit, checksByDate, today) {
   return {
     key: habit.key, label: habit.label, target: habit.weeklyTarget,
     done: days.filter((d) => d.state === "done").length,
+    // Petit point « jour prévu » seulement si l'habitude a des jours officiels
+    // PARTICULIERS (salle : lundi, mercredi, vendredi). Tous les jours
+    // officiels (10 000 pas) ou aucun : pas de point.
+    marksOfficialDays: days.some((d) => d.official) && days.some((d) => !d.official),
     days,
   };
 }
