@@ -225,10 +225,21 @@ export function bannerSubtitle(pendingTasks, today, timeZone = deviceTimeZone())
   return `${plural ? "Elles attendent" : "Elle attend"} ${since}`;
 }
 
+const NBSP = "\u00A0";
+
+// Nom de boîte entre guillemets français, insécable de bout en bout (espaces
+// insécables à l'intérieur des guillemets ET entre les mots) : aucun retour à
+// la ligne ne laisse « À » seul en fin de ligne.
+export function quotedBox(name) {
+  return `«${NBSP}${name.split(" ").join(NBSP)}${NBSP}»`;
+}
+
 // `toUnsorted` : voir sendsToUnsorted (calculé au moment de l'action).
 export function confirmationLabel(action, task, { toUnsorted = false } = {}) {
   if (action === "recover") {
-    return toUnsorted ? "Récupérée : elle va dans « À trier »" : `Récupérée : retourne dans « ${boxLabel(task)} »`;
+    return toUnsorted
+      ? `Récupérée : elle va dans ${quotedBox("À trier")}`
+      : `Récupérée : retourne dans ${quotedBox(boxLabel(task))}`;
   }
   if (action === "validate") return "Validée : comptée pour hier";
   return "Abandonnée";

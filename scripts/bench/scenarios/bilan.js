@@ -59,7 +59,7 @@ const READ_SCREEN = `(() => {
     habitOrder: [...document.querySelectorAll("#bilan .bilan-habit")].map((h) => h.dataset.habit),
     gym: habitData("gym"), steps: habitData("steps"),
     note: q(".bilan-note")?.textContent.trim() ?? null,
-    end: q(".bilan-end").textContent.trim(),
+    end: q(".bilan-end")?.textContent.trim() ?? null,
   };
 })()`;
 

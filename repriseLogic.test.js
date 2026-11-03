@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   previousDateString, daysBetween, localNoonIso, isPendingReprise, pendingReprise,
   sendsToUnsorted, pastWeekNote, PAST_WEEK_NOTE, recoverChanges, validateChanges, undoChanges, applyChanges, changeToMutation, writeChangesInOrder,
-  introSentence, counterLabel, ageLabel, bannerTitle, bannerSubtitle, confirmationLabel, recapSummary,
+  introSentence, counterLabel, ageLabel, bannerTitle, bannerSubtitle, confirmationLabel, quotedBox, recapSummary,
   yesterdayQuestions, habitQuestion, habitConfirmation, screenIntro,
 } from "./repriseLogic.js";
 import { applyMutation } from "./syncLogic.js";
@@ -171,8 +171,8 @@ test("texts: singular / plural, counter, age, banner, confirmation, recap", () =
   assert.equal(bannerTitle(3), "3 tâches à reprendre");
   assert.equal(bannerSubtitle([task({ created_at: "2026-10-21T08:00:00Z" })], TODAY, PARIS), "Elle attend depuis hier");
   assert.equal(bannerSubtitle([task({ created_at: "2026-10-21T08:00:00Z" }), task({ created_at: "2026-10-19T08:00:00Z" })], TODAY, PARIS), "Elles attendent depuis 3 jours");
-  assert.equal(confirmationLabel("recover", task({ important: false })), "Récupérée : retourne dans « Autres »");
-  assert.equal(confirmationLabel("recover", task()), "Récupérée : retourne dans « Important »");
+  assert.equal(confirmationLabel("recover", task({ important: false })), "Récupérée : retourne dans «\u00A0Autres\u00A0»");
+  assert.equal(confirmationLabel("recover", task()), "Récupérée : retourne dans «\u00A0Important\u00A0»");
   assert.equal(confirmationLabel("validate", task()), "Validée : comptée pour hier");
   assert.equal(confirmationLabel("abandon", task()), "Abandonnée");
   assert.equal(recapSummary({ recover: 2, validate: 1 }), "2 récupérées · 1 validée");
@@ -298,7 +298,7 @@ test("past week, Autres: Récupérer keeps today's behaviour (back to Autres)", 
   assert.equal(sendsToUnsorted(before, WED, PARIS), false);
   assert.deepEqual(recoverChanges(before, WED, PARIS), [{ reminder_time: null }, { last_triaged_on: WED }]);
   assert.equal(applyChanges(before, recoverChanges(before, WED, PARIS)).important, false);
-  assert.equal(confirmationLabel("recover", before, { toUnsorted: false }), "Récupérée : retourne dans « Autres »");
+  assert.equal(confirmationLabel("recover", before, { toUnsorted: false }), "Récupérée : retourne dans «\u00A0Autres\u00A0»");
 });
 
 test("same week, Important: Récupérer keeps today's behaviour and important_since", () => {
@@ -334,6 +334,19 @@ test("note « Pas faite la semaine dernière »: any past-week task, whatever it
 });
 
 test("confirmation: « Récupérée : elle va dans « À trier » » for a past-week Important task", () => {
-  assert.equal(confirmationLabel("recover", lastWeek(), { toUnsorted: true }), "Récupérée : elle va dans « À trier »");
-  assert.equal(confirmationLabel("recover", lastWeek()), "Récupérée : retourne dans « Important »");
+  assert.equal(confirmationLabel("recover", lastWeek(), { toUnsorted: true }), "Récupérée : elle va dans «\u00A0À\u00A0trier\u00A0»");
+  assert.equal(confirmationLabel("recover", lastWeek()), "Récupérée : retourne dans «\u00A0Important\u00A0»");
+});
+
+test("confirmation: no breakable space inside « … » nor inside the box name", () => {
+  const labels = [
+    confirmationLabel("recover", lastWeek(), { toUnsorted: true }),
+    confirmationLabel("recover", task({ important: false })),
+    confirmationLabel("recover", task()),
+  ];
+  assert.deepEqual(labels.map((l) => l.match(/«[^»]*»/)[0]), [
+    "«\u00A0À\u00A0trier\u00A0»", "«\u00A0Autres\u00A0»", "«\u00A0Important\u00A0»",
+  ]);
+  for (const label of labels) assert.doesNotMatch(label.match(/«[^»]*»/)[0], / /, label);
+  assert.equal(quotedBox("À trier"), "«\u00A0À\u00A0trier\u00A0»");
 });

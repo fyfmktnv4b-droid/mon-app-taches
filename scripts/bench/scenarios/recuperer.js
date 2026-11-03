@@ -10,12 +10,16 @@
 import assert from "node:assert/strict";
 import { localDateString } from "../../../localDate.js";
 import { weekStart, addDays } from "../../../bilanLogic.js";
+import { quotedBox } from "../../../repriseLogic.js";
 
 export const name = "« Récupérer » d'une tâche d'une semaine passée";
 
 const EMAIL = "recuperer@example.test";
 const PASSWORD = "mot-de-passe-du-banc"; // n'existe que dans le faux serveur
 const NOTE = "Pas faite la semaine dernière";
+// Confirmations exactes, espaces insécables comprises (« À trier » ne se coupe pas).
+const TO_UNSORTED = JSON.stringify(`Récupérée : elle va dans ${quotedBox("À trier")}`);
+const BACK_TO = (box) => JSON.stringify(`Récupérée : retourne dans ${quotedBox(box)}`);
 
 const visible = (id) => `!document.getElementById(${JSON.stringify(id)}).hidden`;
 const card = (id, rest = "") => `#reprise [data-id="${id}"]${rest}`;
@@ -96,7 +100,7 @@ export async function run({ page, fake, appOrigin, log }) {
 
     // 2. Important de la semaine passée : « À trier », puis « Annuler » restaure tout.
     await page.tapSelector(card(oldImportant.id, ' [data-action="recover"]'));
-    await page.waitFor(`document.querySelector('${card(oldImportant.id, " .reprise-done-text")}')?.textContent === "Récupérée : elle va dans « À trier »"`, { label: "la confirmation « À trier »" });
+    await page.waitFor(`document.querySelector('${card(oldImportant.id, " .reprise-done-text")}')?.textContent === ${TO_UNSORTED}`, { label: "la confirmation « À trier »" });
     await until(() => row(oldImportant).last_triaged_on === today, "l'écriture de « Récupérer »");
     assert.deepEqual(
       (({ important, important_since, reminder_time, last_triaged_on }) => ({ important, important_since, reminder_time, last_triaged_on }))(row(oldImportant)),
@@ -117,7 +121,7 @@ export async function run({ page, fake, appOrigin, log }) {
     //    setFields à 4 champs), puis est rejouée contre le faux serveur.
     fake.setMode("down");
     await page.tapSelector(card(oldImportant.id, ' [data-action="recover"]'));
-    await page.waitFor(`document.querySelector('${card(oldImportant.id, " .reprise-done-text")}')?.textContent === "Récupérée : elle va dans « À trier »"`, { label: "la confirmation « À trier » (serveur coupé)" });
+    await page.waitFor(`document.querySelector('${card(oldImportant.id, " .reprise-done-text")}')?.textContent === ${TO_UNSORTED}`, { label: "la confirmation « À trier » (serveur coupé)" });
     const readQueue = () => page.evaluate(`(async () => {
       const db = await new Promise((ok, ko) => { const r = indexedDB.open("mon-app-taches"); r.onsuccess = () => ok(r.result); r.onerror = ko; });
       const rows = await new Promise((ok, ko) => { const r = db.transaction("pending_mutations").objectStore("pending_mutations").getAll(); r.onsuccess = () => ok(r.result); r.onerror = ko; });
@@ -149,10 +153,10 @@ export async function run({ page, fake, appOrigin, log }) {
 
     // 4. L'Autre et (si elle existe) celle de la semaine, en ligne.
     await page.tapSelector(card(oldOther.id, ' [data-action="recover"]'));
-    await page.waitFor(`document.querySelector('${card(oldOther.id, " .reprise-done-text")}')?.textContent === "Récupérée : retourne dans « Autres »"`, { label: "la confirmation « Autres »" });
+    await page.waitFor(`document.querySelector('${card(oldOther.id, " .reprise-done-text")}')?.textContent === ${BACK_TO("Autres")}`, { label: "la confirmation « Autres »" });
     if (thisWeek) {
       await page.tapSelector(card(thisWeek.id, ' [data-action="recover"]'));
-      await page.waitFor(`document.querySelector('${card(thisWeek.id, " .reprise-done-text")}')?.textContent === "Récupérée : retourne dans « Important »"`, { label: "la confirmation « Important »" });
+      await page.waitFor(`document.querySelector('${card(thisWeek.id, " .reprise-done-text")}')?.textContent === ${BACK_TO("Important")}`, { label: "la confirmation « Important »" });
     }
     await until(() => row(oldOther).last_triaged_on === today && (!thisWeek || row(thisWeek).last_triaged_on === today) && row(oldImportant).important === null, "les écritures");
     assert.equal(row(oldOther).important, false);
