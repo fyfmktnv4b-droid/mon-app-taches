@@ -65,3 +65,21 @@ test("set_routine_check refuses an unknown key or a missing value, and accepts a
   assert.equal(ok.status, 200);
   assert.deepEqual(JSON.parse(ok.text).checks, { steps: false });
 }));
+
+test("gte / lte select an inclusive range of days, for the signed-in user only; other operators stay refused", () => withServers(async (fake) => {
+  const me = fake.seedUser({ email: "a@example.test", password: "pw" });
+  const other = fake.seedUser({ email: "b@example.test", password: "pw" });
+  for (const local_date of ["2026-11-01", "2026-11-02", "2026-11-04", "2026-11-08", "2026-11-09"]) {
+    fake.db.daily_routines.push({ user_id: me.id, local_date, checks: { steps: true } });
+  }
+  fake.db.daily_routines.push({ user_id: other.id, local_date: "2026-11-03", checks: { steps: true } });
+  const host = `x.supabase.co:${fake.ports.api}`;
+  const login = await call(fake.ports.api, { host, method: "POST", path: "/auth/v1/token?grant_type=password", body: { email: "a@example.test", password: "pw" } });
+  const headers = { authorization: `Bearer ${JSON.parse(login.text).access_token}` };
+  const week = await call(fake.ports.api, { host, headers, path: "/rest/v1/daily_routines?select=local_date,checks&local_date=gte.2026-11-02&local_date=lte.2026-11-08&order=local_date.asc" });
+  assert.equal(week.status, 200);
+  assert.deepEqual(JSON.parse(week.text).map((r) => r.local_date), ["2026-11-02", "2026-11-04", "2026-11-08"]);
+  const refused = await call(fake.ports.api, { host, headers, path: "/rest/v1/daily_routines?local_date=gt.2026-11-02" });
+  assert.notEqual(refused.status, 200);
+  assert.equal(fake.unhandled().length, 1);
+}));

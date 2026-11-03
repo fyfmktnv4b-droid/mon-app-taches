@@ -150,11 +150,16 @@ export async function startServers() {
     const tests = [];
     for (const [key, value] of params) {
       if (RESERVED.has(key)) continue;
-      const m = value.match(/^(eq|neq|is)\.(.*)$/);
+      const m = value.match(/^(eq|neq|is|gte|lte)\.(.*)$/);
       if (!m) throw new Unhandled(`filtre ${key}=${value}`);
       const [, op, wanted] = m;
       tests.push((row) => {
         if (op === "is") return wanted === "null" ? row[key] == null : String(row[key]) === wanted;
+        // Bornes : comparaison de chaînes, exacte pour les dates "YYYY-MM-DD"
+        // (seul usage de l'app : les jours d'une semaine). Une valeur absente
+        // n'est jamais dans l'intervalle, comme NULL en SQL.
+        if (op === "gte") return row[key] != null && String(row[key]) >= wanted;
+        if (op === "lte") return row[key] != null && String(row[key]) <= wanted;
         return (String(row[key]) === wanted) === (op === "eq");
       });
     }
