@@ -51,7 +51,7 @@ beforeEach(() => {
 
 test("online, empty queue: Récupérer then Annuler are direct updates, one field each, in order", async () => {
   setServerGate(true);
-  const changes = recoverChanges(TODAY);
+  const changes = recoverChanges(BEFORE, TODAY, PARIS);
   await writeChanges(BEFORE.id, changes);
   await writeChanges(BEFORE.id, undoChanges(BEFORE, changes));
   assert.deepEqual(payloads(), [
@@ -66,7 +66,7 @@ test("online, empty queue: Récupérer then Annuler are direct updates, one fiel
 
 test("Récupérer (this week's task) never touches important nor important_since", async () => {
   setServerGate(true);
-  await writeChanges(BEFORE.id, recoverChanges(TODAY));
+  await writeChanges(BEFORE.id, recoverChanges(BEFORE, TODAY, PARIS));
   for (const payload of payloads()) {
     assert.equal("important" in payload, false);
     assert.equal("important_since" in payload, false);
@@ -75,7 +75,7 @@ test("Récupérer (this week's task) never touches important nor important_since
 
 test("offline: Récupérer then Annuler are queued in order, the cache follows, and comes back to the original", async () => {
   await storage.setCachedTasks([BEFORE]);
-  const changes = recoverChanges(TODAY);
+  const changes = recoverChanges(BEFORE, TODAY, PARIS);
   await writeChanges(BEFORE.id, changes);
   const [recovered] = await storage.getCachedTasks();
   assert.deepEqual(recovered, { ...BEFORE, reminder_time: null, last_triaged_on: TODAY });
@@ -93,7 +93,7 @@ test("offline: Récupérer then Annuler are queued in order, the cache follows, 
 });
 
 test("replay: the queued Récupérer and Annuler go out in the same order, then the queue is empty", async () => {
-  const changes = recoverChanges(TODAY);
+  const changes = recoverChanges(BEFORE, TODAY, PARIS);
   await writeChanges(BEFORE.id, changes);
   await writeChanges(BEFORE.id, undoChanges(BEFORE, changes));
   setServerGate(true);
@@ -110,7 +110,7 @@ test("replay: the queued Récupérer and Annuler go out in the same order, then 
 test("a write already waiting in the queue: Récupérer goes behind it, never direct", async () => {
   await storage.enqueueMutation({ type: "setTag", id: "other", tagName: "important", value: false });
   setServerGate(true);
-  await writeChanges(BEFORE.id, recoverChanges(TODAY));
+  await writeChanges(BEFORE.id, recoverChanges(BEFORE, TODAY, PARIS));
   assert.deepEqual(updates, []);
   const queue = await storage.getPendingMutations();
   assert.deepEqual(queue.map((m) => m.type), ["setTag", "setReminderTime", "setTag"]);
@@ -129,4 +129,40 @@ test("Valider then Annuler: completed_at is written before done, and undone afte
     { done: false },
     { completed_at: null },
   ]);
+});
+
+// --- Récupérer une tâche Important d'une semaine PASSÉE : vers « À trier » ---
+
+const OLD = Object.freeze({
+  ...BEFORE, id: "old", important_since: "2026-10-28", last_triaged_on: "2026-10-29",
+  created_at: "2026-10-27T08:00:00Z",
+});
+const TO_UNSORTED = { important: null, important_since: null, reminder_time: null, last_triaged_on: TODAY };
+const RESTORED = { important: true, important_since: "2026-10-28", reminder_time: "09:30:00", last_triaged_on: "2026-10-29" };
+
+test("past week, online: Récupérer then Annuler are ONE update each, every field together", async () => {
+  setServerGate(true);
+  const changes = recoverChanges(OLD, TODAY, PARIS);
+  await writeChanges(OLD.id, changes);
+  await writeChanges(OLD.id, undoChanges(OLD, changes));
+  assert.deepEqual(payloads(), [TO_UNSORTED, RESTORED]);
+  assert.equal((await storage.getPendingMutations()).length, 0);
+});
+
+test("past week, offline: one setFields in the queue each, cache in À trier then back to the original", async () => {
+  await storage.setCachedTasks([OLD]);
+  const changes = recoverChanges(OLD, TODAY, PARIS);
+  await writeChanges(OLD.id, changes);
+  assert.deepEqual((await storage.getCachedTasks())[0], { ...OLD, ...TO_UNSORTED });
+  await writeChanges(OLD.id, undoChanges(OLD, changes));
+  assert.deepEqual((await storage.getCachedTasks())[0], OLD);
+  const queue = await storage.getPendingMutations();
+  assert.deepEqual(queue.map(({ queueId: _q, ...m }) => m), [
+    { type: "setFields", id: "old", fields: TO_UNSORTED },
+    { type: "setFields", id: "old", fields: RESTORED },
+  ]);
+  setServerGate(true);
+  await sync.flushQueue();
+  assert.deepEqual(payloads(), [TO_UNSORTED, RESTORED]);
+  assert.equal((await storage.getPendingMutations()).length, 0);
 });

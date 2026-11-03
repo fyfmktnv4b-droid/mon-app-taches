@@ -2,7 +2,7 @@
 // les fonctions existantes de sync.js et de storage.js : mêmes règles
 // hors-ligne que le reste de l'app (file de mutations, last-write-wins). Seule
 // la carte « Hier » lit en plus routines.js (voir loadYesterdayQuestions).
-import { loadTasks, updateTag, updateReminderTime, removeTask, toggleRoutineCheck } from "./sync.js";
+import { loadTasks, updateTag, updateFields, updateReminderTime, removeTask, toggleRoutineCheck } from "./sync.js";
 import { fetchRoutine } from "./routines.js";
 import { getCachedTasks, setCachedTasks, getPendingMutations, enqueueMutation } from "./storage.js";
 import { applyMutation } from "./syncLogic.js";
@@ -75,8 +75,13 @@ async function hasPending() {
   }
 }
 
-function writeNow(id, field, value) {
-  return field === "reminder_time" ? updateReminderTime(id, value) : updateTag(id, field, value);
+// Une étape d'un seul champ s'écrit comme avant ; une étape de plusieurs
+// champs part en UNE requête (setFields), ou en une seule mutation de file.
+function writeNow(id, step) {
+  const fields = Object.keys(step);
+  if (fields.length > 1) return updateFields(id, step);
+  const [field] = fields;
+  return field === "reminder_time" ? updateReminderTime(id, step[field]) : updateTag(id, field, step[field]);
 }
 
 export function writeChanges(id, changes) {

@@ -201,9 +201,12 @@ test("important_since: validating and undoing the validation leave it untouched"
 });
 
 test("important_since: Récupérer, Valider and their undo on « À reprendre » leave it untouched", () => {
-  const before = classify(makeTask({ id: "a", important: null, last_triaged_on: null, reminder_time: null }), true, DAY1);
-  for (const changes of [recoverChanges(DAY3), validateChanges(DAY3, "Europe/Paris")]) {
-    assert.ok(changes.every(([field]) => field !== "important" && field !== "important_since"));
+  // Tâche de la semaine en cours : une tâche Important d'une semaine passée
+  // est, elle, renvoyée dans « À trier » (voir repriseLogic.test.js).
+  const task = makeTask({ id: "a", important: null, last_triaged_on: null, reminder_time: null, created_at: "2026-11-02T08:00:00Z" });
+  const before = classify(task, true, DAY1);
+  for (const changes of [recoverChanges(before, DAY3, "Europe/Paris"), validateChanges(DAY3, "Europe/Paris")]) {
+    assert.ok(changes.every((step) => !("important" in step) && !("important_since" in step)));
     const after = applyChanges(before, changes);
     assert.equal(after.important, true);
     assert.equal(after.important_since, DAY1);
