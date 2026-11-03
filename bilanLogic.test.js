@@ -261,6 +261,14 @@ test("habits: targets, labels and official days come from habits.js", () => {
   assert.deepEqual(habitsWeek({}, WEDNESDAY, [...DEFAULT_HABITS, custom[0]]).map((h) => h.key), ["gym", "steps", "read"]);
 });
 
+test("habits: official-day dots only for particular days (gym), never when every day or no day is official", () => {
+  const [gym, steps] = habitsWeek({}, WEDNESDAY);
+  assert.equal(gym.marksOfficialDays, true);
+  assert.equal(steps.marksOfficialDays, false);
+  const none = habitWeek({ key: "read", label: "Lire", weeklyTarget: 2, officialDays: [], sessions: {} }, {}, WEDNESDAY);
+  assert.equal(none.marksOfficialDays, false);
+});
+
 test("habits: done / missed (no answer or false) / today in progress / future", () => {
   const checks = { "2026-11-02": { gym: true, steps: false }, "2026-11-03": {} };
   const gym = habitWeek(habitByKey("gym"), checks, WEDNESDAY);

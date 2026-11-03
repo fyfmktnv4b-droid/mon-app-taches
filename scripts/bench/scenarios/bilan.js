@@ -47,6 +47,7 @@ const READ_SCREEN = `(() => {
     count: habit(key).querySelector(".bilan-habit-count")?.textContent.trim() ?? null,
     off: habit(key).querySelector(".bilan-habit-off")?.textContent.trim() ?? null,
     states: [...habit(key).querySelectorAll(".bilan-day")].map((d) => d.dataset.state),
+    officialDots: habit(key).querySelectorAll('.bilan-day[data-official="true"]').length,
   });
   return {
     date: q(".bilan-date").textContent.trim(),
@@ -135,6 +136,8 @@ export async function run({ page, fake, appOrigin, log }) {
     assert.deepEqual(online.habitOrder, ["gym", "steps"]);
     assert.equal(online.gym.count, "1 sur 3");
     assert.equal(online.steps.count, "1 sur 7");
+    assert.equal(online.gym.officialDots, 3, "salle : un point sous lundi, mercredi et vendredi");
+    assert.equal(online.steps.officialDots, 0, "10 000 pas : tous les jours sont officiels, aucun point");
     assert.equal(online.steps.states[0], "done");
     // Jours après aujourd'hui = à venir ; aujourd'hui sans coche = en cours (sauf lundi, coché).
     const todayIndex = weekDates(today).indexOf(today);
