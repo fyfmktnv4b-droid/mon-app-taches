@@ -35,6 +35,20 @@ export async function setRoutineCheck(localDate, key, value) {
   return { local_date: row?.local_date ?? localDate, checks: row?.checks ?? {} };
 }
 
+// Routines des jours `fromDate` à `toDate` inclus ("YYYY-MM-DD"), pour le
+// bilan de la semaine. Un jour sans ligne est simplement absent du résultat.
+export async function listRoutinesBetween(fromDate, toDate) {
+  requireServer();
+  const { data, error } = await supabase
+    .from("daily_routines")
+    .select("local_date, checks")
+    .gte("local_date", fromDate)
+    .lte("local_date", toDate)
+    .order("local_date", { ascending: true });
+  if (error) throw error;
+  return data;
+}
+
 export async function listRoutines() {
   requireServer();
   const { data, error } = await supabase
