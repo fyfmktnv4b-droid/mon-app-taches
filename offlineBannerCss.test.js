@@ -26,4 +26,5 @@ test("the banner height and padding both use the gap and the safe area", () => {
 test("the offline-mode screens are shortened by the same banner height", () => {
   assert.match(css, /html\.offline-mode #app[^{]*\{[^}]*calc\(100dvh - var\(--offline-banner-h\)\)/);
   assert.match(css, /html\.offline-mode #reprise\s*\{[^}]*calc\(100dvh - var\(--offline-banner-h\)\)/);
+  assert.match(css, /html\.offline-mode #bilan\s*\{[^}]*calc\(100dvh - var\(--offline-banner-h\)\)/);
 });
