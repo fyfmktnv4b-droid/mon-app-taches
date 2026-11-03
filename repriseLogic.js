@@ -1,5 +1,7 @@
 import { deviceTimeZone, localDateString } from "./localDate.js";
 import { DEFAULT_HABITS, expectedHabits } from "./habits.js";
+import { importanceFields } from "./syncLogic.js";
+import { isFromPastWeek } from "./bilanLogic.js";
 
 // Écran « À reprendre aujourd'hui » : tâches Important / Autres pas terminées,
 // créées avant aujourd'hui (date LOCALE), et pas déjà récupérées aujourd'hui.
@@ -81,54 +83,75 @@ export function pendingReprise(tasks, today, timeZone = deviceTimeZone(), exclud
 }
 
 // ---------------------------------------------------------------------------
-// Actions : chaque action est une liste ORDONNÉE de [champ, valeur] à écrire.
-// L'ordre compte : une coupure réseau entre deux écritures ne doit laisser
-// qu'un état sans danger.
+// Actions : chaque action est une liste ORDONNÉE d'étapes. Une étape est un
+// objet { champ: valeur, ... } écrit en UNE requête :
+//   - un seul champ   -> setTag / setReminderTime, comme avant ;
+//   - plusieurs champs -> setFields : tous ensemble ou aucun.
+// L'ordre des étapes compte : une coupure réseau entre deux écritures ne doit
+// laisser qu'un état sans danger.
 // ---------------------------------------------------------------------------
 
-// Rappel effacé d'abord : une coupure avant last_triaged_on laisse la tâche
-// en attente, donc reproposée — sans danger.
-export function recoverChanges(today) {
-  return [["reminder_time", null], ["last_triaged_on", today]];
+// Tâche Important née dans une semaine PASSÉE (bilanLogic.js) : « Récupérer »
+// la renvoie dans « À trier ». Elle doit être reclassée, et repartira alors
+// d'un nouveau jour d'entrée dans Important.
+export function sendsToUnsorted(task, today, timeZone = deviceTimeZone()) {
+  return task.important === true && isFromPastWeek(task, today, timeZone);
+}
+
+// Cas général : rappel effacé d'abord ; une coupure avant last_triaged_on
+// laisse la tâche en attente, donc reproposée — sans danger.
+// Important d'une semaine passée : une seule étape, donc atomique (sortie
+// d'Important, important_since effacé, rappel effacé, triée aujourd'hui).
+export function recoverChanges(task, today, timeZone = deviceTimeZone()) {
+  if (sendsToUnsorted(task, today, timeZone)) {
+    return [{ ...importanceFields(task, null, today), reminder_time: null, last_triaged_on: today }];
+  }
+  return [{ reminder_time: null }, { last_triaged_on: today }];
 }
 
 // Date d'abord : une coupure avant done=true ne laisse jamais une tâche
 // terminée sans date.
 export function validateChanges(today, timeZone = deviceTimeZone()) {
-  return [["completed_at", localNoonIso(previousDateString(today), timeZone)], ["done", true]];
+  return [{ completed_at: localNoonIso(previousDateString(today), timeZone) }, { done: true }];
 }
 
-// Annuler : les mêmes champs, valeurs d'avant, dans l'ordre inverse (Valider
-// annulé repasse d'abord done=false ; Récupérer annulé remet d'abord
-// last_triaged_on, donc la tâche redevient en attente avant de retrouver son
-// rappel).
+// Annuler : les mêmes étapes, chacune avec les valeurs d'avant, dans l'ordre
+// inverse (Valider annulé repasse d'abord done=false ; Récupérer annulé remet
+// d'abord last_triaged_on, donc la tâche redevient en attente avant de
+// retrouver son rappel). Une étape groupée reste groupée : la tâche renvoyée
+// dans « À trier » retrouve d'un coup important, important_since, son rappel
+// et last_triaged_on.
 export function undoChanges(taskBefore, changes) {
-  return [...changes].reverse().map(([field]) => [field, taskBefore[field] ?? null]);
+  return [...changes].reverse().map((step) =>
+    Object.fromEntries(Object.keys(step).map((field) => [field, taskBefore[field] ?? null])));
 }
 
 export function applyChanges(task, changes) {
-  return changes.reduce((acc, [field, value]) => ({ ...acc, [field]: value }), task);
+  return changes.reduce((acc, step) => ({ ...acc, ...step }), task);
 }
 
 // Mutation de la file hors-ligne (même forme que sync.js / syncLogic.js).
-export function changeToMutation(id, field, value) {
+export function changeToMutation(id, step) {
+  const fields = Object.keys(step);
+  if (fields.length > 1) return { type: "setFields", id, fields: { ...step } };
+  const [field] = fields;
   return field === "reminder_time"
-    ? { type: "setReminderTime", id, reminderTime: value }
-    : { type: "setTag", id, tagName: field, value };
+    ? { type: "setReminderTime", id, reminderTime: step[field] }
+    : { type: "setTag", id, tagName: field, value: step[field] };
 }
 
-// Écrit les changements un par un, dans l'ordre. Dès que la file hors-ligne
+// Écrit les étapes une par une, dans l'ordre. Dès que la file hors-ligne
 // contient quelque chose (avant, ou parce qu'une écriture vient d'y tomber),
 // les écritures suivantes y passent aussi : une écriture directe ne doit
 // jamais doubler une écriture plus ancienne restée en file.
-//   deps.hasPending()               -> Promise<boolean>
-//   deps.writeNow(id, field, value) -> écriture directe (sync.js, qui met en
-//                                      file elle-même si le réseau échoue)
-//   deps.enqueue(mutation)          -> mise en file + mise à jour du cache
+//   deps.hasPending()       -> Promise<boolean>
+//   deps.writeNow(id, step) -> écriture directe (sync.js, qui met en file
+//                              elle-même si le réseau échoue)
+//   deps.enqueue(mutation)  -> mise en file + mise à jour du cache
 export async function writeChangesInOrder(id, changes, deps) {
-  for (const [field, value] of changes) {
-    if (await deps.hasPending()) await deps.enqueue(changeToMutation(id, field, value));
-    else await deps.writeNow(id, field, value);
+  for (const step of changes) {
+    if (await deps.hasPending()) await deps.enqueue(changeToMutation(id, step));
+    else await deps.writeNow(id, step);
   }
 }
 
@@ -182,6 +205,14 @@ export function ageLabel(task, today, timeZone = deviceTimeZone()) {
   return days <= 1 ? "Hier" : `Il y a ${days} jours`;
 }
 
+// Mention sur la carte d'une tâche née dans une semaine passée (Important ou
+// Autres), quel que soit son âge ; l'âge exact est affiché à côté.
+export const PAST_WEEK_NOTE = "Pas faite la semaine dernière";
+
+export function pastWeekNote(task, today, timeZone = deviceTimeZone()) {
+  return isFromPastWeek(task, today, timeZone) ? PAST_WEEK_NOTE : null;
+}
+
 export function bannerTitle(count) {
   return `${count} ${count > 1 ? "tâches" : "tâche"} à reprendre`;
 }
@@ -194,8 +225,11 @@ export function bannerSubtitle(pendingTasks, today, timeZone = deviceTimeZone())
   return `${plural ? "Elles attendent" : "Elle attend"} ${since}`;
 }
 
-export function confirmationLabel(action, task) {
-  if (action === "recover") return `Récupérée : retourne dans « ${boxLabel(task)} »`;
+// `toUnsorted` : voir sendsToUnsorted (calculé au moment de l'action).
+export function confirmationLabel(action, task, { toUnsorted = false } = {}) {
+  if (action === "recover") {
+    return toUnsorted ? "Récupérée : elle va dans « À trier »" : `Récupérée : retourne dans « ${boxLabel(task)} »`;
+  }
   if (action === "validate") return "Validée : comptée pour hier";
   return "Abandonnée";
 }

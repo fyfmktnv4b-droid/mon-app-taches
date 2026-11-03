@@ -637,6 +637,8 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 .reprise-pill[data-box="important"] { background: var(--pink-soft); color: var(--pink-ink); }
 .reprise-pill[data-box="others"] { background: var(--sage-soft); color: var(--sage-deep); }
 .reprise-age { font-size: 13px; color: var(--ink-muted); }
+/* Tâche née dans une semaine passée : simple mention, ton doux. */
+.reprise-week-note { margin: 10px 0 0; font-size: 13px; font-weight: 600; color: var(--pink-ink); }
 .reprise-text { margin: 10px 0 14px; font-size: 17px; font-weight: 600; line-height: 1.35; color: var(--ink); overflow-wrap: anywhere; }
 .reprise-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .reprise-btn {

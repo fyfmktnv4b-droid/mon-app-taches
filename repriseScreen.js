@@ -1,8 +1,8 @@
 // Écran « À reprendre aujourd'hui » (rendu et clics). La logique est dans
 // repriseLogic.js, les écritures dans reprise.js.
 import {
-  recoverChanges, validateChanges, undoChanges, screenIntro, counterLabel,
-  boxLabel, ageLabel, confirmationLabel, recapSummary, habitQuestion, habitConfirmation,
+  recoverChanges, validateChanges, undoChanges, screenIntro, counterLabel, sendsToUnsorted,
+  boxLabel, ageLabel, pastWeekNote, confirmationLabel, recapSummary, habitQuestion, habitConfirmation,
 } from "./repriseLogic.js";
 import { writeChanges, commitAbandons, commitHabitAnswers } from "./reprise.js";
 
@@ -44,7 +44,7 @@ function escapeHtml(str) {
 let root = null;
 let state = null;
 
-// items  : [{ task (telle qu'avant toute action), action, changes }]
+// items  : [{ task (telle qu'avant toute action), action, changes, toUnsorted }]
 // habits : [{ question (voir yesterdayQuestions), answer: null | true | false }]
 //          pour la carte « Hier » de la date `yesterday`.
 export function openRepriseScreen(section, { tasks, habitQuestions = [], yesterday = null, today, dateLabel, onExit }) {
@@ -52,7 +52,7 @@ export function openRepriseScreen(section, { tasks, habitQuestions = [], yesterd
   handledIdsFor(today);
   handledDay = today;
   state = {
-    items: tasks.map((task) => ({ task, action: null, changes: null })),
+    items: tasks.map((task) => ({ task, action: null, changes: null, toUnsorted: false })),
     habits: habitQuestions.map((question) => ({ question, answer: null })),
     yesterday, today, dateLabel, onExit,
     writes: Promise.resolve(),
@@ -95,12 +95,14 @@ function render() {
 
 function cardHtml({ task }, today) {
   const box = task.important ? "important" : "others";
+  const note = pastWeekNote(task, today);
   return `
     <article class="reprise-card" data-id="${escapeHtml(task.id)}">
       <div class="reprise-meta">
         <span class="reprise-pill" data-box="${box}">${boxLabel(task)}</span>
         <span class="reprise-age">${ageLabel(task, today)}</span>
       </div>
+      ${note ? `<p class="reprise-week-note">${escapeHtml(note)}</p>` : ""}
       <p class="reprise-text">${escapeHtml(task.text)}</p>
       <div class="reprise-actions">
         ${["recover", "validate", "abandon"].map((a) => `
@@ -109,11 +111,11 @@ function cardHtml({ task }, today) {
     </article>`;
 }
 
-function doneHtml({ task, action }) {
+function doneHtml({ task, action, toUnsorted }) {
   return `
     <div class="reprise-done" data-id="${escapeHtml(task.id)}">
       <span class="reprise-done-icon">${icon(action)}</span>
-      <span class="reprise-done-text">${escapeHtml(confirmationLabel(action, task))}</span>
+      <span class="reprise-done-text">${escapeHtml(confirmationLabel(action, task, { toUnsorted }))}</span>
       <button type="button" class="reprise-undo" data-undo>Annuler</button>
     </div>`;
 }
@@ -184,7 +186,11 @@ function onClick(event) {
   if (button.dataset.action && !item.action) {
     const action = button.dataset.action;
     item.action = action;
-    if (action === "recover") item.changes = recoverChanges(state.today);
+    if (action === "recover") {
+      // Important d'une semaine passée : retour dans « À trier » (voir repriseLogic.js).
+      item.toUnsorted = sendsToUnsorted(item.task, state.today);
+      item.changes = recoverChanges(item.task, state.today);
+    }
     if (action === "validate") item.changes = validateChanges(state.today);
     // Abandonner : rien n'est écrit avant la sortie de l'écran.
     if (item.changes) queueWrite(id, item.changes);
@@ -193,6 +199,7 @@ function onClick(event) {
     if (item.changes) queueWrite(id, undoChanges(item.task, item.changes));
     item.action = null;
     item.changes = null;
+    item.toUnsorted = false;
     handledIds.delete(id);
   } else {
     return;

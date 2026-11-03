@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   previousDateString, daysBetween, localNoonIso, isPendingReprise, pendingReprise,
-  recoverChanges, validateChanges, undoChanges, applyChanges, changeToMutation, writeChangesInOrder,
+  sendsToUnsorted, pastWeekNote, PAST_WEEK_NOTE, recoverChanges, validateChanges, undoChanges, applyChanges, changeToMutation, writeChangesInOrder,
   introSentence, counterLabel, ageLabel, bannerTitle, bannerSubtitle, confirmationLabel, recapSummary,
   yesterdayQuestions, habitQuestion, habitConfirmation, screenIntro,
 } from "./repriseLogic.js";
@@ -89,8 +89,8 @@ test("local noon is right on both daylight saving days", () => {
 });
 
 test("Recover clears the reminder first, then sets last_triaged_on to today", () => {
-  assert.deepEqual(recoverChanges(TODAY), [["reminder_time", null], ["last_triaged_on", TODAY]]);
-  const after = applyChanges(task({ reminder_time: "09:30:00" }), recoverChanges(TODAY));
+  assert.deepEqual(recoverChanges(task(), TODAY, PARIS), [{ reminder_time: null }, { last_triaged_on: TODAY }]);
+  const after = applyChanges(task({ reminder_time: "09:30:00" }), recoverChanges(task(), TODAY, PARIS));
   assert.equal(after.reminder_time, null);
   assert.equal(isPendingReprise(after, TODAY, PARIS), false);
   assert.equal(isPendingReprise(after, "2026-10-23", PARIS), true); // reproposée demain
@@ -98,17 +98,17 @@ test("Recover clears the reminder first, then sets last_triaged_on to today", ()
 
 test("Validate writes completed_at (yesterday noon, local) before done = true", () => {
   const changes = validateChanges(TODAY, PARIS);
-  assert.deepEqual(changes, [["completed_at", "2026-10-21T10:00:00.000Z"], ["done", true]]);
-  assert.equal(localDateString(new Date(changes[0][1]), PARIS), "2026-10-21");
+  assert.deepEqual(changes, [{ completed_at: "2026-10-21T10:00:00.000Z" }, { done: true }]);
+  assert.equal(localDateString(new Date(changes[0].completed_at), PARIS), "2026-10-21");
   // Le lendemain du retour à l'heure d'hiver : midi du 25 = 11:00 UTC
-  assert.equal(validateChanges("2026-10-26", PARIS)[0][1], "2026-10-25T11:00:00.000Z");
+  assert.equal(validateChanges("2026-10-26", PARIS)[0].completed_at, "2026-10-25T11:00:00.000Z");
 });
 
 test("Undo restores the task exactly, reminder included, in reverse order", () => {
   const before = task({ reminder_time: "18:15:00", last_triaged_on: "2026-10-20" });
-  for (const changes of [recoverChanges(TODAY), validateChanges(TODAY, PARIS)]) {
+  for (const changes of [recoverChanges(before, TODAY, PARIS), validateChanges(TODAY, PARIS)]) {
     const undo = undoChanges(before, changes);
-    assert.deepEqual(undo.map(([f]) => f), changes.map(([f]) => f).reverse());
+    assert.deepEqual(undo.map(Object.keys), changes.map(Object.keys).reverse());
     assert.deepEqual(applyChanges(applyChanges(before, changes), undo), before);
   }
 });
@@ -118,10 +118,10 @@ test("offline: action then undo, replayed from the queue, gives back the origina
   const queue = [];
   const deps = {
     hasPending: async () => queue.length > 0,
-    writeNow: async (id, field, value) => queue.push(changeToMutation(id, field, value)), // le réseau échoue : sync.js met en file
+    writeNow: async (id, step) => queue.push(changeToMutation(id, step)), // le réseau échoue : sync.js met en file
     enqueue: async (m) => queue.push(m),
   };
-  for (const changes of [recoverChanges(TODAY), validateChanges(TODAY, PARIS)]) {
+  for (const changes of [recoverChanges(before, TODAY, PARIS), validateChanges(TODAY, PARIS)]) {
     queue.length = 0;
     await writeChangesInOrder(before.id, changes, deps);
     await writeChangesInOrder(before.id, undoChanges(before, changes), deps);
@@ -136,8 +136,8 @@ test("once a write falls into the queue, the next ones are queued too (never ove
   let networkUp = false;
   const deps = {
     hasPending: async () => queued.length > 0,
-    writeNow: async (id, field, value) => {
-      if (networkUp) direct.push(field); else queued.push(changeToMutation(id, field, value));
+    writeNow: async (id, step) => {
+      if (networkUp) direct.push(...Object.keys(step)); else queued.push(changeToMutation(id, step));
       networkUp = true; // le réseau revient juste après la 1re écriture
     },
     enqueue: async (m) => queued.push(m),
@@ -151,10 +151,10 @@ test("online with an empty queue, each change is written directly, in order", as
   const direct = [];
   const deps = {
     hasPending: async () => false,
-    writeNow: async (_id, field) => direct.push(field),
+    writeNow: async (_id, step) => direct.push(...Object.keys(step)),
     enqueue: async () => assert.fail("nothing should be queued"),
   };
-  await writeChangesInOrder("t1", recoverChanges(TODAY), deps);
+  await writeChangesInOrder("t1", recoverChanges(task(), TODAY, PARIS), deps);
   assert.deepEqual(direct, ["reminder_time", "last_triaged_on"]);
 });
 
@@ -225,4 +225,115 @@ test("Hier: texts", () => {
   assert.equal(screenIntro(2, 1), introSentence(2));
   assert.equal(recapSummary({ recover: 1, answer: 2 }), "1 récupérée · 2 réponses sur hier");
   assert.equal(recapSummary({ answer: 1 }), "1 réponse sur hier");
+});
+
+// --- Récupérer une tâche d'une semaine PASSÉE (bilanLogic.js, isFromPastWeek) ---
+// Semaine du lundi 2 au dimanche 8 novembre 2026 (Paris en UTC+1).
+
+const WED = "2026-11-04";
+const MON = "2026-11-02";
+
+function lastWeek(overrides = {}) {
+  return task({
+    id: "old", important: true, important_since: "2026-10-28", reminder_time: "08:00:00",
+    last_triaged_on: "2026-10-29", created_at: "2026-10-27T08:00:00Z", ...overrides,
+  });
+}
+
+test("past week, Important: Récupérer is ONE step sending it to À trier (all four fields at once)", () => {
+  const before = lastWeek();
+  assert.equal(sendsToUnsorted(before, WED, PARIS), true);
+  const changes = recoverChanges(before, WED, PARIS);
+  assert.deepEqual(changes, [{ important: null, important_since: null, reminder_time: null, last_triaged_on: WED }]);
+  assert.deepEqual(changeToMutation("old", changes[0]), { type: "setFields", id: "old", fields: changes[0] });
+  const after = applyChanges(before, changes);
+  assert.equal(after.important, null);
+  assert.equal(after.important_since, null);
+  assert.equal(after.reminder_time, null);
+  assert.equal(after.last_triaged_on, WED);
+  assert.equal(after.created_at, before.created_at); // jamais modifié
+  assert.equal(isPendingReprise(after, WED, PARIS), false);
+  assert.equal(isPendingReprise(after, "2026-11-05", PARIS), false); // À trier : plus jamais « à reprendre »
+});
+
+test("past week, Important: Annuler restores EVERYTHING in one step, important = true and the old important_since included", () => {
+  const before = lastWeek();
+  const changes = recoverChanges(before, WED, PARIS);
+  const undo = undoChanges(before, changes);
+  assert.deepEqual(undo, [{ important: true, important_since: "2026-10-28", reminder_time: "08:00:00", last_triaged_on: "2026-10-29" }]);
+  assert.deepEqual(applyChanges(applyChanges(before, changes), undo), before);
+});
+
+test("past week, Important, offline: Récupérer and Annuler are one setFields mutation each, replayed back to the original", async () => {
+  const before = lastWeek();
+  const queue = [];
+  const deps = {
+    hasPending: async () => queue.length > 0,
+    writeNow: async (id, step) => queue.push(changeToMutation(id, step)),
+    enqueue: async (m) => queue.push(m),
+  };
+  const changes = recoverChanges(before, WED, PARIS);
+  await writeChangesInOrder(before.id, changes, deps);
+  assert.equal(queue.length, 1);
+  assert.equal(applyMutation([before], queue[0])[0].important, null);
+  await writeChangesInOrder(before.id, undoChanges(before, changes), deps);
+  assert.deepEqual(queue.map((m) => m.type), ["setFields", "setFields"]);
+  assert.deepEqual(queue.reduce(applyMutation, [before]), [before]);
+});
+
+test("past week, Important, online: the grouped step is a single direct write", async () => {
+  const calls = [];
+  const deps = {
+    hasPending: async () => false,
+    writeNow: async (_id, step) => calls.push(step),
+    enqueue: async () => assert.fail("nothing should be queued"),
+  };
+  await writeChangesInOrder("old", recoverChanges(lastWeek(), WED, PARIS), deps);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(Object.keys(calls[0]).sort(), ["important", "important_since", "last_triaged_on", "reminder_time"]);
+});
+
+test("past week, Autres: Récupérer keeps today's behaviour (back to Autres)", () => {
+  const before = lastWeek({ important: false, important_since: null });
+  assert.equal(sendsToUnsorted(before, WED, PARIS), false);
+  assert.deepEqual(recoverChanges(before, WED, PARIS), [{ reminder_time: null }, { last_triaged_on: WED }]);
+  assert.equal(applyChanges(before, recoverChanges(before, WED, PARIS)).important, false);
+  assert.equal(confirmationLabel("recover", before, { toUnsorted: false }), "Récupérée : retourne dans « Autres »");
+});
+
+test("same week, Important: Récupérer keeps today's behaviour and important_since", () => {
+  const before = lastWeek({ created_at: "2026-11-02T08:00:00Z", important_since: MON, last_triaged_on: null });
+  assert.equal(sendsToUnsorted(before, WED, PARIS), false);
+  const after = applyChanges(before, recoverChanges(before, WED, PARIS));
+  assert.equal(after.important, true);
+  assert.equal(after.important_since, MON);
+});
+
+test("born last week but already recovered this week: counts as this week, back to Important", () => {
+  const before = lastWeek({ last_triaged_on: MON });
+  assert.equal(sendsToUnsorted(before, WED, PARIS), false);
+  assert.equal(pastWeekNote(before, WED, PARIS), null);
+});
+
+test("Monday's Récupérer: created Sunday 19:59 is from last week, Sunday 20:00 is not", () => {
+  const at1959 = lastWeek({ created_at: "2026-11-01T18:59:00Z", last_triaged_on: null, important_since: "2026-11-01" });
+  const at2000 = lastWeek({ created_at: "2026-11-01T19:00:00Z", last_triaged_on: null, important_since: "2026-11-01" });
+  assert.equal(sendsToUnsorted(at1959, MON, PARIS), true);
+  assert.equal(sendsToUnsorted(at2000, MON, PARIS), false);
+  assert.equal(pastWeekNote(at1959, MON, PARIS), PAST_WEEK_NOTE);
+  assert.equal(pastWeekNote(at2000, MON, PARIS), null);
+  assert.equal(recoverChanges(at2000, MON, PARIS).length, 2);
+});
+
+test("note « Pas faite la semaine dernière »: any past-week task, whatever its age; none this week", () => {
+  assert.equal(PAST_WEEK_NOTE, "Pas faite la semaine dernière");
+  assert.equal(pastWeekNote(lastWeek(), WED, PARIS), PAST_WEEK_NOTE);
+  assert.equal(pastWeekNote(lastWeek({ important: false }), WED, PARIS), PAST_WEEK_NOTE);
+  assert.equal(pastWeekNote(lastWeek({ created_at: "2026-10-10T08:00:00Z", last_triaged_on: null }), WED, PARIS), PAST_WEEK_NOTE);
+  assert.equal(pastWeekNote(task({ created_at: "2026-11-03T08:00:00Z" }), WED, PARIS), null);
+});
+
+test("confirmation: « Récupérée : elle va dans « À trier » » for a past-week Important task", () => {
+  assert.equal(confirmationLabel("recover", lastWeek(), { toUnsorted: true }), "Récupérée : elle va dans « À trier »");
+  assert.equal(confirmationLabel("recover", lastWeek()), "Récupérée : retourne dans « Important »");
 });
