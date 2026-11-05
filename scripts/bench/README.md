@@ -25,6 +25,12 @@ Tout ce qui sort vers une autre adresse arrive au piège, qui le **refuse toujou
 
 Il n'existe **aucune liste d'hôtes autorisés** : le tri ne repose que sur ce que la page a demandé. Toute requête de la page vers un mauvais `Host` chez l'app ou le faux serveur est ILLICITE aussi. Le tri est testé : `journal.test.js` (sans Chrome) et, avec Chrome, le dernier test de `isolation.chrome.test.js`.
 
+## Captures et mesures de mise en page
+
+`scenarios/routineBoutons.js` mesure les boutons « Validé ? » de la routine du matin (alignement, écarts, hauteur tactile) à 320, 375 et 390 px, pour 1 à 4 habitudes (des lignes sont injectées dans la page : les habitudes ne sont pas configurables). Les règles sont dans `routineLayout.js`, testées sans Chrome. L'horloge de la PAGE est reculée jusqu'au jour voulu (mercredi, jeudi, dimanche) : jamais celle de la machine.
+
+Avec `BENCH_CAPTURE_DIR=<dossier>` (et `BENCH_CAPTURE_LABEL=avant` ou `apres`), il écrit aussi des captures PNG et `<label>-mesures.json` dans ce dossier. Les captures sont prises avant les vérifications : une série « avant » est complète même si la mise en page est cassée.
+
 ## Ajouter un scénario
 
 Un fichier `scenarios/<nom>.js` qui exporte `name` et `async run({ page, fake, appOrigin, log })`. Il lève une erreur s'il échoue. `page` fournit `goto`, `evaluate`, `waitFor`, `tapSelector`, `swipe`, `typeText`, `setOffline` ; `fake` donne les modes de panne (`setMode("online" | "hang" | "down" | "refuse400")`), la base (`fake.db`) et `seedUser`.

@@ -610,6 +610,20 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
   min-height: 44px; padding: 0 16px; border-radius: 999px; font-size: 15px; font-weight: 600;
   background: var(--sage-deep); color: var(--cream);
 }
+/* Tant qu'au moins un « Validé ? » est affiché : grille à deux colonnes. Le
+   libellé (ou « Repos ») est en colonne 1, le bouton en colonne 2, et la
+   colonne 2 prend la largeur du bouton le plus large : tous les boutons ont le
+   même bord gauche et la même largeur. Une habitude par ligne, quel que soit
+   leur nombre : les lignes se placent d'elles-mêmes. Sans bouton, :has() est
+   faux et la ligne reste celle d'origine. */
+.routine-row:has(.routine-validate) {
+  display: grid; grid-template-columns: minmax(0, 1fr) max-content;
+  gap: 12px 10px; align-items: center;
+}
+.routine-row:has(.routine-validate) > .routine-item { display: contents; }
+.routine-row:has(.routine-validate) .routine-check,
+.routine-row:has(.routine-validate) .routine-rest { grid-column: 1; }
+.routine-row:has(.routine-validate) .routine-validate { grid-column: 2; justify-self: stretch; }
 .routine-block .routine-check { padding: 0; min-height: 44px; border: 0; background: transparent; gap: 10px; font-size: 17px; }
 .routine-block .routine-check input { width: 26px; height: 26px; }
 .routine-block .routine-check em { font-style: normal; color: var(--ink-muted); }

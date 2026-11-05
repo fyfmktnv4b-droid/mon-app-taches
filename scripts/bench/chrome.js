@@ -3,7 +3,7 @@
 // dossier temporaire du système, et l'isolation vient de isolation.js.
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isolationFlags } from "./isolation.js";
@@ -139,6 +139,24 @@ async function openPage(cdp, { width = 390, height = 844 } = {}) {
     },
 
     typeText: (text) => call("Input.insertText", { text }),
+
+    // Pour les captures et les mesures de mise en page (aucun effet sur les scénarios existants).
+    // Change la largeur de l'écran émulé ; les rectangles se recalculent aussitôt.
+    resize: (newWidth, newHeight = height) =>
+      call("Emulation.setDeviceMetricsOverride", { width: newWidth, height: newHeight, deviceScaleFactor: 3, mobile: true }),
+
+    // Script exécuté au début de chaque NOUVELLE page (avant le code de l'app) ;
+    // renvoie la fonction qui le retire. Sert à reculer l'horloge de la page.
+    async addInitScript(source) {
+      const { identifier } = await call("Page.addScriptToEvaluateOnNewDocument", { source });
+      return () => call("Page.removeScriptToEvaluateOnNewDocument", { identifier });
+    },
+
+    // Capture PNG ; `clip` ({ x, y, width, height }) en pixels CSS du document.
+    async screenshot(file, clip) {
+      const { data } = await call("Page.captureScreenshot", { format: "png", ...(clip ? { clip: { ...clip, scale: 1 } } : {}) });
+      await writeFile(file, Buffer.from(data, "base64"));
+    },
 
     // Mode avion de la page (le faux serveur a ses propres modes de panne).
     setOffline: (offline) => call("Network.emulateNetworkConditions", { offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 }),

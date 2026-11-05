@@ -2,7 +2,7 @@
 // Jamais de jeton, jamais l'adresse complète. Fonctions pures ; la lecture et
 // l'écriture dans localStorage sont dans lastUser.js.
 
-// "benjamin@icloud.com" -> "b…@icloud.com". null si ce n'est pas une adresse.
+// "utilisateur@example.test" -> "u…@example.test". null si ce n'est pas une adresse.
 export function maskEmail(email) {
   if (typeof email !== "string") return null;
   const at = email.lastIndexOf("@");
