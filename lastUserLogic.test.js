@@ -3,24 +3,24 @@ import assert from "node:assert/strict";
 import { maskEmail, makeMarker, parseMarker, cacheOwner, MIXED_OWNERS } from "./lastUserLogic.js";
 
 test("maskEmail keeps only the first letter and the domain", () => {
-  assert.equal(maskEmail("benjamin.augsburger@icloud.com"), "b…@icloud.com");
-  assert.equal(maskEmail("a@b.ch"), "a…@b.ch");
+  assert.equal(maskEmail("utilisateur@example.test"), "u…@example.test");
+  assert.equal(maskEmail("a@example.test"), "a…@example.test");
 });
 
 test("maskEmail refuses what is not an address", () => {
-  for (const value of [undefined, null, "", "pas-une-adresse", "@icloud.com", "b@", 42]) {
+  for (const value of [undefined, null, "", "pas-une-adresse", "@example.test", "b@", 42]) {
     assert.equal(maskEmail(value), null, String(value));
   }
 });
 
 test("a marker never contains the full address", () => {
-  const marker = makeMarker("user-A", "benjamin.augsburger@icloud.com", new Date("2026-10-27T10:00:00Z"));
-  assert.deepEqual(marker, { userId: "user-A", maskedEmail: "b…@icloud.com", at: "2026-10-27T10:00:00.000Z" });
-  assert.doesNotMatch(JSON.stringify(marker), /augsburger/);
+  const marker = makeMarker("user-A", "utilisateur@example.test", new Date("2026-10-27T10:00:00Z"));
+  assert.deepEqual(marker, { userId: "user-A", maskedEmail: "u…@example.test", at: "2026-10-27T10:00:00.000Z" });
+  assert.doesNotMatch(JSON.stringify(marker), /utilisateur/);
 });
 
 test("parseMarker reads back a marker", () => {
-  const marker = makeMarker("user-A", "b@icloud.com", new Date("2026-10-27T10:00:00Z"));
+  const marker = makeMarker("user-A", "u@example.test", new Date("2026-10-27T10:00:00Z"));
   assert.deepEqual(parseMarker(JSON.stringify(marker)), marker);
 });
 
@@ -32,7 +32,7 @@ test("parseMarker returns null for missing or damaged values", () => {
 
 test("parseMarker keeps only known fields and never an unmasked address", () => {
   const parsed = parseMarker(JSON.stringify({
-    userId: "user-A", maskedEmail: "benjamin@icloud.com", at: "2026-10-27", access_token: "secret",
+    userId: "user-A", maskedEmail: "utilisateur@example.test", at: "2026-10-27", access_token: "secret",
   }));
   assert.deepEqual(parsed, { userId: "user-A", maskedEmail: null, at: "2026-10-27" });
 });

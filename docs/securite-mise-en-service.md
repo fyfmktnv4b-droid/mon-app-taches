@@ -72,7 +72,7 @@ bord : Project Settings → Edge Functions → Secrets) → **Add new secret** :
 
 - Nom : `VAPID_SUBJECT`
 - Valeur : `mailto:` suivi de l'adresse, **collé**, sans espace, sans
-  guillemets, sans chevrons. Exemple de forme : `mailto:mon-alias@icloud.com`
+  guillemets, sans chevrons. Exemple de forme : `mailto:mon-alias@example.test`
 
 À faire **avant** l'étape 4 : sans ce secret, la nouvelle fonction refuse de
 s'exécuter (message `VAPID_SUBJECT manquant`) et plus aucun rappel ne part.
