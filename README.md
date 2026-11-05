@@ -24,9 +24,10 @@ Dans l'ordre où on les rencontre en ouvrant l'app :
   - une bande de suivis quotidiens.
 - **Rappels par notification** :
   - un rappel du matin à heure fixe ;
-  - un rappel ponctuel par tâche. Une heure déjà passée est refusée.
+  - un rappel ponctuel par tâche. Une heure déjà passée est refusée ;
+  - une notification le dimanche soir, qui ouvre directement le bilan de la semaine.
 - **Historique** : les tâches terminées les jours précédents, en lecture seule.
-- **Réglages** : l'heure du rappel du matin, et l'activation des notifications sur l'appareil. Ils demandent le réseau.
+- **Réglages** : l'heure du rappel du matin, la notification du dimanche, et l'activation des notifications sur l'appareil. Ils demandent le réseau.
 - **Sauvegarde** : « Sauvegarder mes tâches » télécharge un fichier JSON (un format texte standard) avec les tâches et la routine.
 - **Hors-ligne et synchronisation** : l'app garde une copie locale des données. Une modification faite sans réseau est mise dans une file d'attente, puis envoyée dans l'ordre au retour du réseau. Entre deux appareils, la dernière modification arrivée l'emporte.
 
@@ -98,6 +99,7 @@ L'interface elle-même n'est pas testée automatiquement : elle se vérifie dans
 | `supabaseClient.js` | Connexion au projet Supabase |
 | `export.js`, `quotes.js`, `dayScenes.js` | Sauvegarde JSON, citations et illustrations de l'accueil |
 | `service-worker.js`, `manifest.json` | Fonctionnement hors-ligne, installation et notifications |
+| `openRequest.js` | Écran à ouvrir après le toucher d'une notification |
 | `*.test.js` | Tests automatiques |
 | `supabase/` | Migrations SQL, retours en arrière, vérifications et fonction de rappels |
 | `vendor/` | Bibliothèque Supabase copiée (ne pas modifier à la main) |
