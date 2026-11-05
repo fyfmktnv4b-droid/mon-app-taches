@@ -8,7 +8,7 @@ import { cacheOwner } from "./lastUserLogic.js";
 import { MAX_TASK_LENGTH, longestTooLongLine, importanceFields } from "./syncLogic.js";
 import { getImportant, getOthers, getUnsorted, getSorted, splitActiveAndArchived, splitOpenAndDone } from "./quadrants.js";
 import { fullExportJson } from "./export.js";
-import { getSettings, setMorningReminderTime, setNotificationsEnabled } from "./settings.js";
+import { getSettings, setMorningReminderTime, setNotificationsEnabled, setWeeklyReviewEnabled } from "./settings.js";
 import { subscribeToPush, unsubscribeFromPush, hasPushSubscription } from "./push.js";
 import { pickQuoteForDate } from "./quotes.js";
 import { sceneForDay } from "./dayScenes.js";
@@ -739,6 +739,10 @@ async function renderSettingsView() {
         <input type="time" id="morning-reminder-time" value="${settings.morning_reminder_time ? settings.morning_reminder_time.slice(0, 5) : ""}">
       </label>
       <button type="submit">Enregistrer l'heure</button>
+      <label class="routine-check">
+        <input type="checkbox" role="switch" id="weekly-review-enabled" ${settings.weekly_review_enabled ? "checked" : ""}>
+        <span>Bilan du dimanche</span>
+      </label>
     </form>
     <button id="toggle-notifications">${notificationsOn ? "Désactiver" : "Activer"} les notifications</button>
   `;
@@ -748,6 +752,23 @@ async function renderSettingsView() {
     event.preventDefault();
     const value = document.getElementById("morning-reminder-time").value;
     safely(() => setMorningReminderTime(value || null));
+  });
+
+  // Enregistré dès le toucher. En cas d'échec, la case reprend son état :
+  // elle ne doit jamais afficher autre chose que ce que le serveur connaît.
+  const weeklyReview = document.getElementById("weekly-review-enabled");
+  weeklyReview.addEventListener("change", () => {
+    const wanted = weeklyReview.checked;
+    weeklyReview.disabled = true;
+    safely(async () => {
+      try {
+        await setWeeklyReviewEnabled(wanted);
+      } catch (err) {
+        weeklyReview.checked = !wanted;
+        weeklyReview.disabled = false;
+        throw err;
+      }
+    });
   });
 
   document.getElementById("toggle-notifications").addEventListener("click", () => {

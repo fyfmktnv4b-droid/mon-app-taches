@@ -13,7 +13,7 @@ export async function getSettings() {
   const user = await requireUser();
   const { data, error } = await supabase
     .from("user_settings")
-    .select("morning_reminder_time, notifications_enabled, timezone")
+    .select("morning_reminder_time, notifications_enabled, timezone, weekly_review_enabled")
     .eq("user_id", user.id)
     .single();
   if (error) throw error;
@@ -25,6 +25,15 @@ export async function setMorningReminderTime(time) {
   const { error } = await supabase
     .from("user_settings")
     .update({ morning_reminder_time: time })
+    .eq("user_id", user.id);
+  if (error) throw error;
+}
+
+export async function setWeeklyReviewEnabled(enabled) {
+  const user = await requireUser();
+  const { error } = await supabase
+    .from("user_settings")
+    .update({ weekly_review_enabled: enabled })
     .eq("user_id", user.id);
   if (error) throw error;
 }
