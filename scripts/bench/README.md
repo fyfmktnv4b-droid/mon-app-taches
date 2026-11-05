@@ -31,6 +31,8 @@ Il n'existe **aucune liste d'hôtes autorisés** : le tri ne repose que sur ce q
 
 Avec `BENCH_CAPTURE_DIR=<dossier>` (et `BENCH_CAPTURE_LABEL=avant` ou `apres`), il écrit aussi des captures PNG et `<label>-mesures.json` dans ce dossier. Les captures sont prises avant les vérifications : une série « avant » est complète même si la mise en page est cassée.
 
+`scenarios/reglagesBilan.js` vérifie l'interrupteur « Bilan du dimanche » (état par défaut, écriture, échec, serveur coupé, zone tactile à 320, 375 et 390 px) et l'ouverture du Bilan au toucher d'une notification. Il retire `PushManager` de la page, car sans service worker `navigator.serviceWorker.ready` ne répond jamais et l'écran Réglages resterait bloqué. Avec `BENCH_CAPTURE_DIR`, il écrit `reglages-<largeur>.png` et `reglages-coupe.png`.
+
 ## Ajouter un scénario
 
 Un fichier `scenarios/<nom>.js` qui exporte `name` et `async run({ page, fake, appOrigin, log })`. Il lève une erreur s'il échoue. `page` fournit `goto`, `evaluate`, `waitFor`, `tapSelector`, `swipe`, `typeText`, `setOffline` ; `fake` donne les modes de panne (`setMode("online" | "hang" | "down" | "refuse400")`), la base (`fake.db`) et `seedUser`.
@@ -43,6 +45,7 @@ Un fichier `scenarios/<nom>.js` qui exporte `name` et `async run({ page, fake, a
 ## Ce que le banc ne couvre PAS
 
 - **Le service worker et le cache hors-ligne** : absents de la copie. Le démarrage à froid sans réseau et la mise à jour du cache ne sont pas testés ici.
+- **Le toucher d'une notification** : le banc dépose lui-même la marque dans la boîte aux lettres et simule le message du service worker. Il vérifie ce que fait l'app, pas le service worker (`serviceWorkerOpen.test.js`, hors navigateur) ni iOS.
 - **https** : la copie parle en `http` au faux serveur.
 - **Le rendu iPhone** : zones d'écran, rebond, flou, clavier. Chrome émule un écran étroit et des événements tactiles, ce n'est pas Safari.
 
