@@ -8,3 +8,6 @@ supabase/.temp/
 .env.*
 *.pem
 *.key
+
+# Réglages locaux de Claude Code (non versionnés)
+.claude/settings.local.json
