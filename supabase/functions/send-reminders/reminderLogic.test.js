@@ -365,3 +365,38 @@ test("runWeeklyReview : réglages illisibles (null), rien ne remonte", async () 
   await assert.doesNotReject(done);
   assert.deepEqual(calls.send, []);
 });
+
+// index.ts tourne sous Deno et n'est pas exécuté ici : ces tests relisent son
+// texte pour tenir les trois règles qui protègent les autres rappels.
+const indexSource = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+
+test("index.ts : la lecture commune des réglages ne demande pas les colonnes du bilan", () => {
+  // Elle ignore ses erreurs : une colonne absente y couperait TOUS les rappels.
+  const shared = indexSource.match(/\.select\("user_id, morning_reminder_time[^"]*"\)/);
+  assert.ok(shared, "lecture commune introuvable");
+  assert.doesNotMatch(shared[0], /weekly/);
+});
+
+test("index.ts : la notification du dimanche passe après les rappels de tâches", () => {
+  const tasks = indexSource.indexOf('.from("tasks")');
+  const weekly = indexSource.indexOf("await runWeeklyReview(");
+  assert.ok(tasks > 0 && weekly > tasks);
+});
+
+test("index.ts : les lectures du bilan signalent leurs erreurs à runWeeklyReview", () => {
+  const block = indexSource.slice(indexSource.indexOf("await runWeeklyReview("));
+  assert.equal(block.match(/if \(error\) throw error;/g)?.length, 3);
+});
+
+test("index.ts : la réclamation vérifie la date locale et les deux interrupteurs", () => {
+  const block = indexSource.slice(indexSource.indexOf("await runWeeklyReview("));
+  assert.match(block, /\.update\(\{ last_weekly_review_sent_date: localDate \}\)/);
+  assert.match(block, /\.eq\("notifications_enabled", true\)/);
+  assert.match(block, /\.eq\("weekly_review_enabled", true\)/);
+  assert.match(block, /last_weekly_review_sent_date\.is\.null,last_weekly_review_sent_date\.neq\.\$\{localDate\}/);
+});
+
+test("index.ts n'importe aucun autre fichier local que reminderLogic.js", () => {
+  const local = [...indexSource.matchAll(/from "(\.[^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(local, ["./reminderLogic.js"]);
+});

@@ -1,13 +1,14 @@
 // Déclenchée par pg_cron toutes les minutes (voir migration 0001, section
 // notifications dans docs/superpowers/specs/2026-09-04-mon-app-taches-design.md).
-// Envoie les rappels matinaux et les rappels par tâche dus, via Web Push.
+// Envoie les rappels matinaux, les rappels par tâche et la notification du
+// dimanche dus, via Web Push.
 
 // Versions exactes : la fonction détient la clé service_role, on ne laisse
 // donc pas un « @2 » flottant tirer au déploiement une version publiée la
 // veille (risque de paquet compromis). supabase-js aligné sur vendor/.
 import { createClient } from "npm:@supabase/supabase-js@2.115.0";
 import webpush from "npm:web-push@3.6.7";
-import { localParts, isDueNow, cronGuard, vapidSubjectProblem } from "./reminderLogic.js";
+import { localParts, isDueNow, cronGuard, vapidSubjectProblem, runWeeklyReview } from "./reminderLogic.js";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -148,6 +149,48 @@ Deno.serve(async (req) => {
       console.error(`task reminder skipped for task ${t.id}:`, err);
     }
   }
+
+  // Notification du dimanche : en dernier, et ses colonnes sont lues à part de
+  // la lecture commune ci-dessus, qui ignore ses erreurs. Une colonne absente
+  // (fonction déployée avant la migration) ne coupe ainsi que cette partie.
+  // runWeeklyReview ne lève jamais.
+  await runWeeklyReview({
+    settings,
+    now,
+    loadRows: async (userIds: string[]) => {
+      const { data, error } = await supabase
+        .from("user_settings")
+        .select("user_id, weekly_review_enabled, last_weekly_review_sent_date")
+        .in("user_id", userIds);
+      if (error) throw error;
+      return data ?? [];
+    },
+    loadSubscribedUserIds: async (userIds: string[]) => {
+      const { data, error } = await supabase
+        .from("push_subscriptions")
+        .select("user_id")
+        .in("user_id", userIds);
+      if (error) throw error;
+      return (data ?? []).map((row) => row.user_id);
+    },
+    // Claim atomique, comme le rappel matinal : deux invocations du cron qui
+    // se chevauchent n'envoient qu'une fois. Les deux interrupteurs sont
+    // revérifiés ici : ils ont pu être coupés depuis la lecture.
+    claim: async (userId: string, localDate: string) => {
+      const { data, error } = await supabase
+        .from("user_settings")
+        .update({ last_weekly_review_sent_date: localDate })
+        .eq("user_id", userId)
+        .eq("notifications_enabled", true)
+        .eq("weekly_review_enabled", true)
+        .or(`last_weekly_review_sent_date.is.null,last_weekly_review_sent_date.neq.${localDate}`)
+        .select("user_id");
+      if (error) throw error;
+      return (data ?? []).length > 0;
+    },
+    send: sendPushToUser,
+    logError: console.error,
+  });
 
   return new Response("ok");
 });
