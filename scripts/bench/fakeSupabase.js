@@ -100,7 +100,7 @@ export async function startServers() {
   function createUser(email, password) {
     const user = { id: randomUUID(), email, password, created_at: new Date().toISOString() };
     users.set(email, user);
-    db.user_settings.push({ user_id: user.id, morning_reminder_time: null, notifications_enabled: false, timezone: "Europe/Paris", last_morning_reminder_sent_date: null });
+    db.user_settings.push({ user_id: user.id, morning_reminder_time: null, notifications_enabled: false, timezone: "Europe/Paris", last_morning_reminder_sent_date: null, weekly_review_enabled: true, last_weekly_review_sent_date: null });
     return user;
   }
 

@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 export const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const DIRS = ["fonts", "icons", "illustrations", "vendor"];
 const TEXT_ROOT_FILES = (name) => /\.(js|html|css|json)$/.test(name)
-  && !name.endsWith(".test.js") && name !== "service-worker.js" && name !== "fakeIndexedDB.js";
+  && !name.endsWith(".test.js") && name !== "service-worker.js" && name !== "fakeIndexedDB.js" && name !== "fakeCaches.js";
 
 // Le projet est lu dans supabaseClient.js : aucune adresse n'est dupliquée ici.
 export function projectRef(clientSource) {
