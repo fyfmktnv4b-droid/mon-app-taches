@@ -5,6 +5,12 @@
 const CACHE_VERSION = "v41";
 const CACHE_NAME = `mon-app-taches-${CACHE_VERSION}`;
 
+// Boîte aux lettres vers l'app (voir openRequest.js, qui porte les mêmes noms).
+// Cache à part : ni « activate » ni « fetch » n'y touchent, et aucune requête
+// de l'app ne demande cette clé.
+const OPEN_REQUEST_CACHE = "mon-app-taches-open-request";
+const OPEN_REQUEST_KEY = "__open-request";
+
 const ASSETS = [
   "./",
   "./index.html",
@@ -46,6 +52,7 @@ const ASSETS = [
   "./bilanLogic.js",
   "./bilan.js",
   "./bilanScreen.js",
+  "./openRequest.js",
   "./repriseLogic.js",
   "./reprise.js",
   "./repriseScreen.js",
@@ -80,7 +87,9 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((names) =>
-      Promise.all(names.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name)))
+      Promise.all(names
+        .filter((name) => name !== CACHE_NAME && name !== OPEN_REQUEST_CACHE)
+        .map((name) => caches.delete(name)))
     )
   );
   self.clients.claim();
@@ -115,18 +124,36 @@ self.addEventListener("push", (event) => {
     self.registration.showNotification(payload.title, {
       body: payload.body,
       icon: "./icons/icon-192.png",
+      // Liste fermée : on n'ouvre jamais une adresse reçue par le réseau.
+      data: { open: payload.open === "bilan" ? "bilan" : null },
     })
   );
 });
 
+// La marque passe avant tout : l'app la relève même si le reste échoue. Sans
+// stockage, le toucher ouvre quand même l'app, sur son écran habituel.
+async function leaveOpenRequest(screen) {
+  try {
+    const cache = await caches.open(OPEN_REQUEST_CACHE);
+    await cache.put(OPEN_REQUEST_KEY, new Response(JSON.stringify({ screen, createdAt: Date.now() })));
+  } catch (_err) {
+    // Rien à faire de plus.
+  }
+}
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
-      for (const client of clients) {
-        if ("focus" in client) return client.focus();
+  const screen = event.notification.data?.open === "bilan" ? "bilan" : null;
+  event.waitUntil((async () => {
+    if (screen) await leaveOpenRequest(screen);
+    const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const client of clients) {
+      if ("focus" in client) {
+        // Prévient une app déjà à l'écran, qui ne recevra pas d'autre signal.
+        if (screen) client.postMessage({ type: "open-request" });
+        return client.focus();
       }
-      if (self.clients.openWindow) return self.clients.openWindow("./");
-    })
-  );
+    }
+    if (self.clients.openWindow) return self.clients.openWindow("./");
+  })());
 });

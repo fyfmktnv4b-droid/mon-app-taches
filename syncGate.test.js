@@ -114,6 +114,12 @@ test("gate closed: settings are refused at once, without any call", async () => 
   assert.deepEqual(dataCalls, []);
 });
 
+test("gate closed: the « Bilan du dimanche » switch is refused at once, without any call", async () => {
+  setServerGate(false);
+  await assert.rejects(settings.setWeeklyReviewEnabled(false), ServerGateClosedError);
+  assert.deepEqual(dataCalls, []);
+});
+
 // --- Régression : porte ouverte, tout se passe comme avant ---
 
 test("gate open: a write goes straight to the server and the queue stays empty", async () => {

@@ -21,6 +21,7 @@ import { pendingReprise, bannerTitle, bannerSubtitle } from "./repriseLogic.js";
 import { loadTasksForReprise, loadYesterdayQuestions } from "./reprise.js";
 import { openRepriseScreen, handledIdsFor, abandonedIds } from "./repriseScreen.js";
 import { openBilanScreen } from "./bilanScreen.js";
+import { takeOpenRequest } from "./openRequest.js";
 import { MORNING_KEYS, MORNING_LABELS, SKIP_KEY, isChecked, isMorningDone, shouldShowRoutine } from "./routineLogic.js";
 
 if ("serviceWorker" in navigator) {
@@ -90,6 +91,7 @@ let doneOpen = false; // boîte « Terminé » dépliée ? (repliée par défaut
 // "signedOut". La porte serveur (authGate.js) suit cet état.
 let authState = "booting";
 let signOutRequested = false; // vrai seulement pendant un clic sur « Se déconnecter »
+let bilanRequested = false; // notification touchée : le Bilan attend le premier écran
 let onlineSince = null; // dernier événement « online » vu en mode hors-ligne
 let bannerTimer = null;
 let routineLocalDate = null; // the local day the routine screen is currently showing
@@ -131,10 +133,18 @@ function showWelcome() {
   appSection.hidden = true;
   repriseSection.hidden = true;
   bilanSection.hidden = true;
-  welcomeSection.hidden = false;
   authInfo.textContent = "";
-  updateOfflineBanner();
   repriseOffered = false;
+  // Notification touchée : le Bilan prend la place de l'accueil, sans passer
+  // par lui. « Fermer » mènera aux tâches (accueil et routine sautés cette fois).
+  if (bilanRequested) {
+    bilanRequested = false;
+    showBilan();
+    updateOfflineBanner();
+    return;
+  }
+  welcomeSection.hidden = false;
+  updateOfflineBanner();
   // Reset in case a previous sign-in's click left this disabled (see the
   // welcomeContinue click handler below) — a fresh welcome screen must
   // always start with a usable button.
@@ -331,6 +341,24 @@ function showBilan() {
   repriseSection.hidden = true;
   bilanSection.hidden = false;
   openBilanScreen(bilanSection, { excludedIds: abandonedIds, onClose: enterApp });
+}
+
+// Relève la boîte aux lettres (openRequest.js). Au chargement ou sur l'écran de
+// connexion, le Bilan attend le premier écran (showWelcome) ; sinon il s'ouvre
+// tout de suite, feuilles et menu refermés (ils réapparaîtraient après « Fermer »).
+// Renvoie vrai si une demande a été prise.
+async function honorOpenRequest() {
+  if (!(await takeOpenRequest())) return false;
+  if (!splashDone || !authSection.hidden) {
+    bilanRequested = true;
+    return true;
+  }
+  setMenuOpen(false);
+  closeReminderSheet();
+  closeTaskMenu();
+  closeSignOutSheet();
+  showBilan();
+  return true;
 }
 
 // Le champ grandit avec le texte (une tâche par ligne), jusqu'à ~4 lignes,
@@ -910,11 +938,18 @@ menuPanel.addEventListener("click", (event) => {
 // Une app restée ouverte passé minuit ne se met pas à jour toute seule : on
 // redessine au retour au premier plan, ce qui sort les tâches d'hier de
 // « Terminé » (elles passent dans l'Historique).
-document.addEventListener("visibilitychange", () => {
+document.addEventListener("visibilitychange", async () => {
   if (document.visibilityState !== "visible") return;
+  if (await honorOpenRequest()) return; // notification touchée, app en arrière-plan
   if (!appSection.hidden) render();
   // Bilan resté ouvert : nouveau jour, dimanche 20:00, données d'un autre appareil.
   else if (!bilanSection.hidden) showBilan();
+});
+
+// Notification touchée alors que l'app est déjà à l'écran : aucun retour au
+// premier plan, seul le service worker peut la prévenir.
+navigator.serviceWorker?.addEventListener("message", (event) => {
+  if (event.data?.type === "open-request") honorOpenRequest();
 });
 
 function showView(view) {
@@ -1195,8 +1230,16 @@ try {
   // Stockage inaccessible : pas de message.
 }
 
+// App fermée : la boîte aux lettres est relevée AVANT le premier écran, pour
+// aller au Bilan sans montrer l'accueil (1 s au plus : le stockage ne doit
+// jamais retenir le démarrage). iOS peut démarrer l'app avant que le service
+// worker ait écrit, et un message peut se perdre à ce moment : d'où les
+// relevés suivants, qui ne coûtent qu'une lecture locale.
+const OPEN_REQUEST_RECHECK_MS = [500, 1500, 3000];
+for (const delay of OPEN_REQUEST_RECHECK_MS) setTimeout(honorOpenRequest, delay);
+
 // Les événements sont traités un par un, dans l'ordre d'arrivée.
-let authEvents = Promise.resolve();
+let authEvents = settlesWithin(honorOpenRequest(), 1000);
 onAuthStateChange((session, event) => {
   authEvents = authEvents.then(() => handleAuthEvent(session, event)).catch((err) => console.error(err));
 });
