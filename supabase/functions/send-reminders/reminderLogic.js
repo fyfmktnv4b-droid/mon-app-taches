@@ -1,3 +1,15 @@
+// Notification du dimanche : UNE seule constante, jour + heure locale de
+// l'utilisateur (weekday : 0 = dimanche, 1 = lundi…). Doit rester la fin de
+// semaine de l'app (bilanLogic.js) : reminderLogic.test.js le vérifie.
+export const WEEKLY_REVIEW_SCHEDULE = { weekday: 0, time: "20:00" };
+
+// `open` : écran que le service worker doit ouvrir au toucher.
+export const WEEKLY_REVIEW_PAYLOAD = {
+  title: "Ta semaine est prête",
+  body: "Ton bilan est là, quand tu veux.",
+  open: "bilan",
+};
+
 // Extrait heure/minute/date locales via Intl.formatToParts — contrat garanti
 // par la spec ECMAScript, contrairement à un aller-retour toLocaleString/Date.
 export function localParts(timezone, now) {
@@ -25,6 +37,63 @@ export function isDueNow(target, timezone, now, windowMinutes = WINDOW_MINUTES) 
   const { minutesOfDay } = localParts(timezone, now);
   const diff = minutesOfDay - (th * 60 + tm);
   return diff >= 0 && diff < windowMinutes;
+}
+
+// Vrai pendant la fenêtre de la notification du dimanche, en heure locale.
+export function isWeeklyReviewTime(timezone, now, schedule = WEEKLY_REVIEW_SCHEDULE) {
+  const { dateKey } = localParts(timezone, now);
+  return new Date(`${dateKey}T00:00:00Z`).getUTCDay() === schedule.weekday
+    && isDueNow(schedule.time, timezone, now);
+}
+
+// Date locale à réclamer si l'envoi est dû pour cet utilisateur, sinon null.
+export function weeklyReviewDate(user, hasSubscription, now, schedule = WEEKLY_REVIEW_SCHEDULE) {
+  if (user.notifications_enabled !== true || user.weekly_review_enabled !== true || !hasSubscription) return null;
+  if (!isWeeklyReviewTime(user.timezone, now, schedule)) return null;
+  const { dateKey } = localParts(user.timezone, now);
+  return user.last_weekly_review_sent_date === dateKey ? null : dateKey;
+}
+
+// Déroulé complet de la notification du dimanche ; index.ts ne fournit que les
+// accès à la base et l'envoi. Ne lève JAMAIS : les colonnes peuvent manquer
+// (fonction déployée avant la migration) et cela ne doit gêner aucun autre
+// rappel. Les colonnes de ce bilan sont lues ici, à part de la lecture commune,
+// et seulement si quelqu'un est dans la fenêtre : aucune requête en plus le
+// reste de la semaine.
+export async function runWeeklyReview({
+  settings, now, loadRows, loadSubscribedUserIds, claim, send, logError, schedule = WEEKLY_REVIEW_SCHEDULE,
+}) {
+  try {
+    const candidates = [];
+    for (const s of settings ?? []) {
+      try {
+        if (s.notifications_enabled && isWeeklyReviewTime(s.timezone, now, schedule)) candidates.push(s);
+      } catch (err) {
+        logError(`weekly review skipped for user ${s.user_id}:`, err);
+      }
+    }
+    if (candidates.length === 0) return;
+
+    const userIds = candidates.map((s) => s.user_id);
+    const [rows, subscribedIds] = await Promise.all([loadRows(userIds), loadSubscribedUserIds(userIds)]);
+    const rowByUser = new Map(rows.map((row) => [row.user_id, row]));
+    const subscribed = new Set(subscribedIds);
+
+    for (const s of candidates) {
+      try {
+        const user = { ...s, ...rowByUser.get(s.user_id) };
+        const localDate = weeklyReviewDate(user, subscribed.has(s.user_id), now, schedule);
+        if (!localDate) continue;
+        if (!(await claim(s.user_id, localDate))) continue;
+        const ok = await send(s.user_id, WEEKLY_REVIEW_PAYLOAD);
+        if (!ok) logError(`weekly review push failed for user ${s.user_id}`);
+      } catch (err) {
+        logError(`weekly review skipped for user ${s.user_id}:`, err);
+      }
+    }
+  } catch (err) {
+    logError("weekly review skipped:", err);
+  }
 }
 
 // Garde d'entrée de send-reminders. Fermée par défaut : sans CRON_SECRET
