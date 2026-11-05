@@ -92,7 +92,7 @@ test("vapidSubjectProblem accepts mailto: and https: subjects", () => {
 test("vapidSubjectProblem explains a missing or malformed subject", () => {
   assert.match(vapidSubjectProblem(undefined), /VAPID_SUBJECT manquant/);
   assert.match(vapidSubjectProblem(""), /VAPID_SUBJECT manquant/);
-  for (const bad of ["rappels@example.org", "mailto:", "mailto:pas-une-adresse", "mailto: a@b.org", "mailto:<a@b.org>", "http://example.org"]) {
+  for (const bad of ["rappels@example.org", "mailto:", "mailto:pas-une-adresse", "mailto: a@example.test", "mailto:<a@example.test>", "http://example.org"]) {
     assert.match(vapidSubjectProblem(bad), /VAPID_SUBJECT invalide/, bad);
   }
 });

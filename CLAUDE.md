@@ -1,6 +1,9 @@
 # Règles du dépôt
 
-Ce dépôt est **public** : aucun secret, jamais.
+Dépôt public : jamais d'adresse e-mail réelle, de nom réel, de nom d'ordinateur
+ni de secret dans les fichiers, tests, commentaires ou messages de commit ;
+utiliser des adresses fictives en @example.test. Ne jamais modifier la
+configuration git.
 
 ## Méthode
 - Plan d'abord : l'afficher et attendre l'accord avant de modifier quoi que ce soit.

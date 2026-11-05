@@ -77,7 +77,7 @@ test("gate closed: setTag goes to the queue without error, the replay leaves it 
 
 test("gate closed: every write is queued and every read uses the cache, with zero data call", async () => {
   setServerGate(false);
-  writeMarker("user-A", "b@icloud.com");
+  writeMarker("user-A", "u@example.test");
   await storage.setCachedTasks([{ id: "task-1", user_id: "user-A", text: "Pain", done: false, important: null }]);
   await storage.setCachedRoutine({ local_date: "2026-10-27", checks: { wake: true } });
 
@@ -138,7 +138,7 @@ test("gate open: the queue is replayed in order and emptied", async () => {
 
 test("gate open but the SDK has no session: a new task is queued under the marker, no error", async () => {
   setServerGate(true);
-  writeMarker("user-A", "b@icloud.com");
+  writeMarker("user-A", "u@example.test");
   const realFrom = supabase.from;
   const realGetUser = supabase.auth.getUser;
   const realGetSession = supabase.auth.getSession;
