@@ -100,7 +100,7 @@ export async function startServers() {
   function createUser(email, password) {
     const user = { id: randomUUID(), email, password, created_at: new Date().toISOString() };
     users.set(email, user);
-    db.user_settings.push({ user_id: user.id, morning_reminder_time: null, notifications_enabled: false, timezone: "Europe/Paris", last_morning_reminder_sent_date: null, weekly_review_enabled: true, last_weekly_review_sent_date: null });
+    db.user_settings.push({ user_id: user.id, morning_reminder_time: null, notifications_enabled: false, timezone: "Europe/Paris", last_morning_reminder_sent_date: null, weekly_review_enabled: true, last_weekly_review_sent_date: null, weekly_review_time: null });
     return user;
   }
 
@@ -180,6 +180,18 @@ export async function startServers() {
     user_settings: () => ({}),
   };
   const ROUTINE_KEYS = ["wake", "wash", "meditate", "pray", "gym", "steps", "skipped"];
+  // Même refus que la contrainte de la migration 0007 : heure du bilan NULL,
+  // ou entre 20:00 et 23:00 comprises. Erreur 400, code Postgres 23514.
+  function checkViolation(table, values) {
+    if (table !== "user_settings" || !values || !("weekly_review_time" in values)) return null;
+    const time = values.weekly_review_time;
+    if (time === null) return null;
+    const m = typeof time === "string" && time.match(/^(\d\d):(\d\d)(?::(\d\d))?$/);
+    const seconds = m ? (Number(m[1]) * 60 + Number(m[2])) * 60 + Number(m[3] ?? 0) : -1;
+    if (seconds >= 20 * 3600 && seconds <= 23 * 3600) return null;
+    return { code: "23514", message: 'new row for relation "user_settings" violates check constraint "user_settings_weekly_review_time_range"', details: null, hint: null };
+  }
+
   const CONFLICT_KEYS = { tasks: ["id"], daily_routines: ["user_id", "local_date"], push_subscriptions: ["endpoint"], user_settings: ["user_id"] };
 
   function handleRest(req, res, url, body, userId) {
@@ -235,6 +247,8 @@ export async function startServers() {
     }
 
     if (req.method === "PATCH") {
+      const violation = checkViolation(table, body);
+      if (violation) return json(res, 400, violation);
       const hit = db[table].filter((r) => mine(r) && matches(r));
       for (const row of hit) Object.assign(row, body, { user_id: userId, updated_at: new Date().toISOString() });
       return wantsRows ? json(res, 200, hit) : reply(res, 204, "");

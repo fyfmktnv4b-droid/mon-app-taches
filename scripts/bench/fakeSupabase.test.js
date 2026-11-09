@@ -83,3 +83,23 @@ test("gte / lte select an inclusive range of days, for the signed-in user only; 
   assert.notEqual(refused.status, 200);
   assert.equal(fake.unhandled().length, 1);
 }));
+
+test("user_settings.weekly_review_time: the fake refuses what the 0007 constraint refuses", () => withServers(async (fake) => {
+  const me = fake.seedUser({ email: "a@example.test", password: "pw" });
+  const host = `x.supabase.co:${fake.ports.api}`;
+  const login = await call(fake.ports.api, { host, method: "POST", path: "/auth/v1/token?grant_type=password", body: { email: "a@example.test", password: "pw" } });
+  const headers = { authorization: `Bearer ${JSON.parse(login.text).access_token}` };
+  const row = () => fake.db.user_settings.find((r) => r.user_id === me.id);
+  const patch = (body) => call(fake.ports.api, { host, method: "PATCH", path: `/rest/v1/user_settings?user_id=eq.${me.id}`, headers, body });
+  assert.equal(row().weekly_review_time, null);
+  for (const bad of ["19:59", "23:01", "23:00:01", "abc"]) {
+    const r = await patch({ morning_reminder_time: "07:30", weekly_review_time: bad });
+    assert.equal(r.status, 400, bad);
+    assert.equal(JSON.parse(r.text).code, "23514");
+  }
+  assert.equal(row().morning_reminder_time, null, "rien n'est écrit quand la contrainte refuse");
+  for (const good of ["20:00", "23:00", "21:30:00", null]) {
+    assert.equal((await patch({ weekly_review_time: good })).status, 204, String(good));
+    assert.equal(row().weekly_review_time, good);
+  }
+}));
