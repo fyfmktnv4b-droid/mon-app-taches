@@ -25,9 +25,9 @@ Dans l'ordre où on les rencontre en ouvrant l'app :
 - **Rappels par notification** :
   - un rappel du matin à heure fixe ;
   - un rappel ponctuel par tâche. Une heure déjà passée est refusée ;
-  - une notification le dimanche soir, qui ouvre directement le bilan de la semaine.
+  - une notification le dimanche soir, à l'heure choisie entre 20:00 et 23:00 (20:00 par défaut), qui ouvre directement le bilan de la semaine. Le bilan, lui, est prêt dès 20:00.
 - **Historique** : les tâches terminées les jours précédents, en lecture seule.
-- **Réglages** : l'heure du rappel du matin, la notification du dimanche, et l'activation des notifications sur l'appareil. Ils demandent le réseau.
+- **Réglages** : l'heure du rappel du matin, la notification du dimanche et son heure, et l'activation des notifications sur l'appareil. « Enregistrer les heures » enregistre les deux heures ensemble, ou aucune : une heure du bilan hors de 20:00–23:00 est refusée avec un message sous le champ. Ils demandent le réseau.
 - **Sauvegarde** : « Sauvegarder mes tâches » télécharge un fichier JSON (un format texte standard) avec les tâches et la routine.
 - **Hors-ligne et synchronisation** : l'app garde une copie locale des données. Une modification faite sans réseau est mise dans une file d'attente, puis envoyée dans l'ordre au retour du réseau. Entre deux appareils, la dernière modification arrivée l'emporte.
 
@@ -95,6 +95,7 @@ L'interface elle-même n'est pas testée automatiquement : elle se vérifie dans
 | `localDate.js` | Dates et heures locales de l'appareil |
 | `routineLogic.js`, `routines.js`, `routineBlock.js` | Routine du matin et suivis quotidiens |
 | `tasks.js`, `settings.js`, `push.js` | Accès aux tâches, aux réglages et aux notifications |
+| `settingsLogic.js` | Heure du bilan du dimanche : bornes (les mêmes que la base et la fonction de rappels) et vérification |
 | `sync.js`, `syncLogic.js`, `storage.js` | Hors-ligne : copie locale, file d'attente, synchronisation |
 | `supabaseClient.js` | Connexion au projet Supabase |
 | `export.js`, `quotes.js`, `dayScenes.js` | Sauvegarde JSON, citations et illustrations de l'accueil |
