@@ -3,6 +3,12 @@
 // semaine de l'app (bilanLogic.js) : reminderLogic.test.js le vérifie.
 export const WEEKLY_REVIEW_SCHEDULE = { weekday: 0, time: "20:00" };
 
+// Heure choisie dans Réglages (colonne weekly_review_time, migration 0007) :
+// bornes comprises, les mêmes que la contrainte de la base et que l'app
+// (settingsLogic.js) : reminderLogic.test.js le vérifie. Une valeur nulle,
+// illisible ou hors plage donne l'heure de WEEKLY_REVIEW_SCHEDULE.
+export const WEEKLY_REVIEW_TIME_RANGE = { min: "20:00", max: "23:00" };
+
 // `open` : écran que le service worker doit ouvrir au toucher.
 export const WEEKLY_REVIEW_PAYLOAD = {
   title: "Ta semaine est prête",
@@ -46,6 +52,37 @@ export function isWeeklyReviewTime(timezone, now, schedule = WEEKLY_REVIEW_SCHED
     && isDueNow(schedule.time, timezone, now);
 }
 
+const minutesOf = (hhmm) => {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+};
+
+// Heure "HH:MM" de la notification pour un utilisateur : la sienne si elle est
+// lisible et dans la plage (Postgres renvoie "21:30:00"), sinon celle de la
+// constante. Ne lève jamais.
+export function effectiveWeeklyReviewTime(value, schedule = WEEKLY_REVIEW_SCHEDULE, range = WEEKLY_REVIEW_TIME_RANGE) {
+  const match = typeof value === "string" && value.match(/^(\d\d):(\d\d)(?::(\d\d)(?:\.\d+)?)?$/);
+  if (!match) return schedule.time;
+  const [h, m, s] = [Number(match[1]), Number(match[2]), Number(match[3] ?? 0)];
+  if (h > 23 || m > 59 || s > 59) return schedule.time;
+  const seconds = (h * 60 + m) * 60 + s;
+  if (seconds < minutesOf(range.min) * 60 || seconds > minutesOf(range.max) * 60) return schedule.time;
+  return `${match[1]}:${match[2]}`;
+}
+
+// Vrai si une notification du dimanche PEUT être due à cet instant, quelle que
+// soit l'heure choisie : le bon jour local, entre le début de la plage et la
+// fin de la fenêtre de sa dernière heure (ou dans la fenêtre de l'heure par
+// défaut). Sert de premier tri, sans requête : le reste de la semaine,
+// l'heure choisie n'est même pas lue.
+export function isWeeklyReviewEvening(timezone, now, schedule = WEEKLY_REVIEW_SCHEDULE, range = WEEKLY_REVIEW_TIME_RANGE) {
+  if (isWeeklyReviewTime(timezone, now, schedule)) return true;
+  const { dateKey, minutesOfDay } = localParts(timezone, now);
+  return new Date(`${dateKey}T00:00:00Z`).getUTCDay() === schedule.weekday
+    && minutesOfDay >= minutesOf(range.min)
+    && minutesOfDay < minutesOf(range.max) + WINDOW_MINUTES;
+}
+
 // Date locale à réclamer si l'envoi est dû pour cet utilisateur, sinon null.
 export function weeklyReviewDate(user, hasSubscription, now, schedule = WEEKLY_REVIEW_SCHEDULE) {
   if (user.notifications_enabled !== true || user.weekly_review_enabled !== true || !hasSubscription) return null;
@@ -58,31 +95,53 @@ export function weeklyReviewDate(user, hasSubscription, now, schedule = WEEKLY_R
 // accès à la base et l'envoi. Ne lève JAMAIS : les colonnes peuvent manquer
 // (fonction déployée avant la migration) et cela ne doit gêner aucun autre
 // rappel. Les colonnes de ce bilan sont lues ici, à part de la lecture commune,
-// et seulement si quelqu'un est dans la fenêtre : aucune requête en plus le
-// reste de la semaine.
+// et seulement le soir du dimanche : aucune requête en plus le reste de la
+// semaine. L'heure choisie est lue seule, avant le reste : si elle manque
+// (fonction déployée avant la migration 0007), tout le monde garde 20:00.
 export async function runWeeklyReview({
-  settings, now, loadRows, loadSubscribedUserIds, claim, send, logError, schedule = WEEKLY_REVIEW_SCHEDULE,
+  settings, now, loadTimes, loadRows, loadSubscribedUserIds, claim, send, logError,
+  schedule = WEEKLY_REVIEW_SCHEDULE, range = WEEKLY_REVIEW_TIME_RANGE,
 }) {
   try {
-    const candidates = [];
+    const evening = [];
     for (const s of settings ?? []) {
       try {
-        if (s.notifications_enabled && isWeeklyReviewTime(s.timezone, now, schedule)) candidates.push(s);
+        if (s.notifications_enabled && isWeeklyReviewEvening(s.timezone, now, schedule, range)) evening.push(s);
+      } catch (err) {
+        logError(`weekly review skipped for user ${s.user_id}:`, err);
+      }
+    }
+    if (evening.length === 0) return;
+
+    let timeByUser = new Map();
+    try {
+      const times = await loadTimes(evening.map((s) => s.user_id));
+      timeByUser = new Map((times ?? []).map((row) => [row.user_id, row.weekly_review_time]));
+    } catch (err) {
+      logError("weekly review time unreadable, default time used:", err);
+    }
+
+    const candidates = [];
+    for (const s of evening) {
+      try {
+        const time = effectiveWeeklyReviewTime(timeByUser.get(s.user_id), schedule, range);
+        const userSchedule = { ...schedule, time };
+        if (isWeeklyReviewTime(s.timezone, now, userSchedule)) candidates.push({ s, userSchedule });
       } catch (err) {
         logError(`weekly review skipped for user ${s.user_id}:`, err);
       }
     }
     if (candidates.length === 0) return;
 
-    const userIds = candidates.map((s) => s.user_id);
+    const userIds = candidates.map(({ s }) => s.user_id);
     const [rows, subscribedIds] = await Promise.all([loadRows(userIds), loadSubscribedUserIds(userIds)]);
     const rowByUser = new Map(rows.map((row) => [row.user_id, row]));
     const subscribed = new Set(subscribedIds);
 
-    for (const s of candidates) {
+    for (const { s, userSchedule } of candidates) {
       try {
         const user = { ...s, ...rowByUser.get(s.user_id) };
-        const localDate = weeklyReviewDate(user, subscribed.has(s.user_id), now, schedule);
+        const localDate = weeklyReviewDate(user, subscribed.has(s.user_id), now, userSchedule);
         if (!localDate) continue;
         if (!(await claim(s.user_id, localDate))) continue;
         const ok = await send(s.user_id, WEEKLY_REVIEW_PAYLOAD);

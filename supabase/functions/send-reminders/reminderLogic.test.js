@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { localParts, isDueNow, cronGuard, secretsMatch, vapidSubjectProblem } from "./reminderLogic.js";
 import {
   WEEKLY_REVIEW_SCHEDULE, WEEKLY_REVIEW_PAYLOAD, isWeeklyReviewTime, weeklyReviewDate, runWeeklyReview,
+  WEEKLY_REVIEW_TIME_RANGE, effectiveWeeklyReviewTime, isWeeklyReviewEvening,
 } from "./reminderLogic.js";
 import { isClosingTime } from "../../../bilanLogic.js";
 
@@ -127,6 +128,7 @@ const user = (fields = {}) => ({
   notifications_enabled: true,
   weekly_review_enabled: true,
   last_weekly_review_sent_date: null,
+  weekly_review_time: null,
   ...fields,
 });
 
@@ -230,13 +232,17 @@ test("weeklyReviewDate : hors de la fenêtre, pas de rattrapage", () => {
 // Les accès à la base sont remplacés par ces fausses fonctions, qui notent
 // leurs appels. La logique, elle, est la vraie.
 function weeklyRun(overrides = {}) {
-  const calls = { loadRows: 0, loadSubscribedUserIds: 0, claim: [], send: [], errors: [] };
+  const calls = { loadTimes: [], loadRows: [], loadSubscribedUserIds: 0, claim: [], send: [], errors: [] };
   const rows = overrides.rows ?? [user()];
   const deps = {
     settings: rows.map(({ user_id, timezone, notifications_enabled }) => ({ user_id, timezone, notifications_enabled })),
     now: SUNDAY_8PM,
-    loadRows: async () => {
-      calls.loadRows++;
+    loadTimes: async (userIds) => {
+      calls.loadTimes.push(userIds);
+      return rows.map(({ user_id, weekly_review_time }) => ({ user_id, weekly_review_time }));
+    },
+    loadRows: async (userIds) => {
+      calls.loadRows.push(userIds);
       return rows.map(({ user_id, weekly_review_enabled, last_weekly_review_sent_date }) => ({
         user_id, weekly_review_enabled, last_weekly_review_sent_date,
       }));
@@ -270,7 +276,8 @@ test("runWeeklyReview réclame la date locale puis envoie la notification", asyn
 test("runWeeklyReview : hors fenêtre, aucune requête en plus (le cron tourne chaque minute)", async () => {
   const { calls, done } = weeklyRun({ deps: { now: utc("2026-11-05", "19:00") } });
   await done;
-  assert.equal(calls.loadRows, 0);
+  assert.deepEqual(calls.loadTimes, []);
+  assert.deepEqual(calls.loadRows, []);
   assert.equal(calls.loadSubscribedUserIds, 0);
   assert.deepEqual(calls.claim, []);
   assert.deepEqual(calls.send, []);
@@ -279,7 +286,8 @@ test("runWeeklyReview : hors fenêtre, aucune requête en plus (le cron tourne c
 test("runWeeklyReview : notifications coupées, aucune requête en plus", async () => {
   const { calls, done } = weeklyRun({ rows: [user({ notifications_enabled: false })] });
   await done;
-  assert.equal(calls.loadRows, 0);
+  assert.deepEqual(calls.loadTimes, []);
+  assert.deepEqual(calls.loadRows, []);
   assert.deepEqual(calls.send, []);
 });
 
@@ -385,7 +393,7 @@ test("index.ts : la notification du dimanche passe après les rappels de tâches
 
 test("index.ts : les lectures du bilan signalent leurs erreurs à runWeeklyReview", () => {
   const block = indexSource.slice(indexSource.indexOf("await runWeeklyReview("));
-  assert.equal(block.match(/if \(error\) throw error;/g)?.length, 3);
+  assert.equal(block.match(/if \(error\) throw error;/g)?.length, 4);
 });
 
 test("index.ts : la réclamation vérifie la date locale et les deux interrupteurs", () => {
@@ -399,4 +407,190 @@ test("index.ts : la réclamation vérifie la date locale et les deux interrupteu
 test("index.ts n'importe aucun autre fichier local que reminderLogic.js", () => {
   const local = [...indexSource.matchAll(/from "(\.[^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(local, ["./reminderLogic.js"]);
+});
+
+test("index.ts : l'heure du bilan est lue seule, à part des autres colonnes du bilan", () => {
+  const block = indexSource.slice(indexSource.indexOf("await runWeeklyReview("));
+  assert.match(block, /loadTimes: async[\s\S]*?\.select\("user_id, weekly_review_time"\)/);
+  const rows = block.match(/loadRows: async[\s\S]*?\.select\("([^"]*)"\)/);
+  assert.ok(rows);
+  assert.doesNotMatch(rows[1], /weekly_review_time/);
+});
+
+// ---------------------------------------------------------------------------
+// Heure du bilan choisie dans Réglages (migration 0007)
+// ---------------------------------------------------------------------------
+
+test("la plage de l'heure du bilan commence à l'heure par défaut, qui est la fin de semaine de l'app", () => {
+  assert.equal(WEEKLY_REVIEW_TIME_RANGE.min, WEEKLY_REVIEW_SCHEDULE.time);
+  assert.equal(WEEKLY_REVIEW_TIME_RANGE.max, "23:00");
+});
+
+test("la plage de l'heure du bilan est celle de la contrainte de la base (migration 0007)", () => {
+  const migration = readFileSync(new URL("../../migrations/0007_weekly_review_time.sql", import.meta.url), "utf8");
+  const m = migration.match(/weekly_review_time between time '(\d\d:\d\d)' and time '(\d\d:\d\d)'/);
+  assert.ok(m);
+  assert.deepEqual([m[1], m[2]], [WEEKLY_REVIEW_TIME_RANGE.min, WEEKLY_REVIEW_TIME_RANGE.max]);
+});
+
+test("la fenêtre de la dernière heure possible finit avant minuit : jamais de débordement sur lundi", () => {
+  const [h, m] = WEEKLY_REVIEW_TIME_RANGE.max.split(":").map(Number);
+  assert.ok(h * 60 + m + 5 <= 24 * 60);
+});
+
+test("effectiveWeeklyReviewTime garde une heure lisible dans la plage, bornes comprises", () => {
+  for (const [value, expected] of [["20:00", "20:00"], ["20:00:00", "20:00"], ["21:30:00", "21:30"],
+    ["22:55", "22:55"], ["23:00", "23:00"], ["23:00:00", "23:00"], ["23:00:00.000", "23:00"]]) {
+    assert.equal(effectiveWeeklyReviewTime(value), expected, value);
+  }
+});
+
+test("effectiveWeeklyReviewTime : valeur nulle, illisible ou hors plage, retour à 20:00 sans erreur", () => {
+  for (const value of [null, undefined, "", 42, {}, "abc", "9:30", "19:59", "19:59:59", "23:01", "23:00:01",
+    "24:00", "20:60", "21:30:61", " 21:30", "21h30"]) {
+    assert.equal(effectiveWeeklyReviewTime(value), "20:00", String(value));
+  }
+});
+
+test("isWeeklyReviewEvening : dimanche de 20:00 à 23:04, rien avant, après ni un autre jour", () => {
+  const zurich = (date, time) => isWeeklyReviewEvening("Europe/Zurich", utc(date, time, -60)); // UTC+1 en novembre
+  assert.equal(zurich("2026-11-08", "19:59"), false);
+  assert.equal(zurich("2026-11-08", "20:00"), true);
+  assert.equal(zurich("2026-11-08", "23:04"), true);
+  assert.equal(zurich("2026-11-08", "23:05"), false);
+  assert.equal(zurich("2026-11-09", "21:00"), false); // lundi
+  assert.equal(zurich("2026-11-07", "21:00"), false); // samedi
+});
+
+// Dimanches testés : les trois changements d'heure, plus le 8 novembre 2026.
+// [libellé, date, heure UTC de 20:00 locale]
+const SUNDAYS = [...SUNDAYS_AT_20, ["dimanche 8 novembre 2026 (heure d'hiver)", "2026-11-08", "19:00"]];
+
+// Envoyé ou non, pour une heure choisie, `minutes` après 20:00 locale ce dimanche-là.
+async function sentAt(zone, date, utcAt20, time, minutes, fields = {}) {
+  const { calls, done } = weeklyRun({
+    rows: [user({ timezone: zone, weekly_review_time: time, ...fields })],
+    deps: { now: utc(date, utcAt20, minutes) },
+  });
+  await done;
+  assert.deepEqual(calls.errors, []);
+  return calls.send.length === 1;
+}
+
+for (const zone of ZONES) {
+  for (const [label, date, utcAt20] of SUNDAYS) {
+    test(`heure choisie 22:55, ${zone}, ${label} : 22:54 non, 22:55 et 22:59 oui, 23:00 non`, async () => {
+      assert.equal(await sentAt(zone, date, utcAt20, "22:55:00", 174), false);
+      assert.equal(await sentAt(zone, date, utcAt20, "22:55:00", 175), true);
+      assert.equal(await sentAt(zone, date, utcAt20, "22:55:00", 179), true);
+      assert.equal(await sentAt(zone, date, utcAt20, "22:55:00", 180), false);
+    });
+
+    test(`heure choisie 23:00, ${zone}, ${label} : 22:59 non, 23:00 et 23:04 oui, 23:05 non, lundi non`, async () => {
+      assert.equal(await sentAt(zone, date, utcAt20, "23:00:00", 179), false);
+      assert.equal(await sentAt(zone, date, utcAt20, "23:00:00", 180), true);
+      assert.equal(await sentAt(zone, date, utcAt20, "23:00:00", 184), true);
+      assert.equal(await sentAt(zone, date, utcAt20, "23:00:00", 185), false);
+      assert.equal(await sentAt(zone, date, utcAt20, "23:00:00", 240), false); // lundi 00:00
+      assert.equal(await sentAt(zone, date, utcAt20, "23:00:00", 240 + 24 * 60 - 60), false); // lundi 23:00
+    });
+
+    test(`heure choisie 21:30, ${zone}, ${label} : rien à 20:00, envoi à 21:30`, async () => {
+      assert.equal(await sentAt(zone, date, utcAt20, "21:30:00", 0), false);
+      assert.equal(await sentAt(zone, date, utcAt20, "21:30:00", 90), true);
+    });
+
+    test(`aucune heure choisie, ${zone}, ${label} : envoi à 20:00 comme avant`, async () => {
+      assert.equal(await sentAt(zone, date, utcAt20, null, 0), true);
+      assert.equal(await sentAt(zone, date, utcAt20, null, 90), false);
+    });
+  }
+}
+
+test("heure illisible ou hors plage en base : envoi à 20:00, aucune erreur", async () => {
+  const [, date, utcAt20] = SUNDAYS.at(-1);
+  for (const bad of ["19:30:00", "23:30:00", "n'importe quoi", 7]) {
+    assert.equal(await sentAt("Europe/Zurich", date, utcAt20, bad, 0), true, String(bad));
+    assert.equal(await sentAt("Europe/Zurich", date, utcAt20, bad, 90), false, String(bad));
+  }
+});
+
+test("heure changée le dimanche AVANT l'envoi : la nouvelle heure s'applique", async () => {
+  // 20:00 → 22:00, changé à 19:30 : rien à 20:00, envoi à 22:00.
+  const [, date, utcAt20] = SUNDAYS.at(-1);
+  assert.equal(await sentAt("Europe/Zurich", date, utcAt20, "22:00:00", 0), false);
+  assert.equal(await sentAt("Europe/Zurich", date, utcAt20, "22:00:00", 120), true);
+});
+
+test("heure changée le dimanche APRÈS l'envoi : rien ne repart (date déjà réservée)", async () => {
+  const [, date, utcAt20] = SUNDAYS.at(-1);
+  const sentToday = { last_weekly_review_sent_date: date };
+  assert.equal(await sentAt("Europe/Zurich", date, utcAt20, "22:00:00", 120, sentToday), false);
+});
+
+test("heure changée le dimanche pour une heure déjà passée : pas de rattrapage", async () => {
+  // À 21:30, on passe de 22:00 à 21:00 : la fenêtre de 21:00 est finie.
+  const [, date, utcAt20] = SUNDAYS.at(-1);
+  assert.equal(await sentAt("Europe/Zurich", date, utcAt20, "21:00:00", 90), false);
+});
+
+test("heure changée pour une heure qui vient de commencer : envoi à la minute suivante du cron", async () => {
+  // À 21:32, on choisit 21:30 : encore dans la fenêtre [21:30, 21:35).
+  const [, date, utcAt20] = SUNDAYS.at(-1);
+  assert.equal(await sentAt("Europe/Zurich", date, utcAt20, "21:30:00", 92), true);
+});
+
+test("deux utilisateurs, deux heures : seul celui dont c'est l'heure est lu et servi", async () => {
+  const rows = [user({ user_id: "a-20h", weekly_review_time: null }), user({ user_id: "b-21h30", weekly_review_time: "21:30:00" })];
+  const { calls, done } = weeklyRun({ rows, deps: { now: utc("2026-11-08", "20:30") } }); // 21:30 à Zurich
+  await done;
+  assert.deepEqual(calls.loadTimes, [["a-20h", "b-21h30"]]);
+  assert.deepEqual(calls.loadRows, [["b-21h30"]]);
+  assert.deepEqual(calls.send.map(([id]) => id), ["b-21h30"]);
+});
+
+test("le soir du dimanche, personne à son heure : l'heure est lue, rien d'autre", async () => {
+  const { calls, done } = weeklyRun({ deps: { now: utc("2026-11-08", "20:30") } }); // 21:30, heure par défaut
+  await done;
+  assert.equal(calls.loadTimes.length, 1);
+  assert.deepEqual(calls.loadRows, []);
+  assert.deepEqual(calls.send, []);
+});
+
+test("colonne weekly_review_time absente : erreur consignée une fois, envoi à 20:00 malgré tout", async () => {
+  const { calls, done } = weeklyRun({
+    rows: [user({ weekly_review_time: "22:00:00" })],
+    deps: { loadTimes: async () => { throw new Error("column weekly_review_time does not exist"); } },
+  });
+  await assert.doesNotReject(done);
+  assert.deepEqual(calls.send.map(([id]) => id), ["user-1"]);
+  assert.equal(calls.errors.length, 1);
+  assert.match(calls.errors[0][0], /default time used/);
+});
+
+test("colonne weekly_review_time absente, à 21:30 : rien n'est envoyé et rien ne remonte", async () => {
+  const { calls, done } = weeklyRun({
+    rows: [user({ weekly_review_time: "21:30:00" })],
+    deps: { now: utc("2026-11-08", "20:30"), loadTimes: async () => { throw new Error("absente"); } },
+  });
+  await assert.doesNotReject(done);
+  assert.deepEqual(calls.send, []);
+});
+
+test("lecture de l'heure qui renvoie null : envoi à 20:00", async () => {
+  const { calls, done } = weeklyRun({ deps: { loadTimes: async () => null } });
+  await done;
+  assert.deepEqual(calls.send.map(([id]) => id), ["user-1"]);
+  assert.deepEqual(calls.errors, []);
+});
+
+test("essai réel : jour de la constante changé (lundi), heure réglée par SQL à 21:30, envoi à 21:30", async () => {
+  const monday = { ...WEEKLY_REVIEW_SCHEDULE, weekday: 1 };
+  const run = (now) => {
+    const r = weeklyRun({ rows: [user({ weekly_review_time: "21:30:00" })], deps: { now, schedule: monday } });
+    return r.done.then(() => r.calls.send.length);
+  };
+  assert.equal(await run(utc("2026-11-09", "19:00")), 0); // lundi 20:00 Zurich
+  assert.equal(await run(utc("2026-11-09", "20:30")), 1); // lundi 21:30 Zurich
+  assert.equal(await run(utc("2026-11-08", "20:30")), 0); // dimanche 21:30
 });

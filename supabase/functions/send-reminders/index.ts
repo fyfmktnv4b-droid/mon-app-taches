@@ -153,10 +153,19 @@ Deno.serve(async (req) => {
   // Notification du dimanche : en dernier, et ses colonnes sont lues à part de
   // la lecture commune ci-dessus, qui ignore ses erreurs. Une colonne absente
   // (fonction déployée avant la migration) ne coupe ainsi que cette partie.
-  // runWeeklyReview ne lève jamais.
+  // runWeeklyReview ne lève jamais. L'heure choisie (migration 0007) est lue
+  // seule : si cette lecture échoue, le bilan part à 20:00 comme avant.
   await runWeeklyReview({
     settings,
     now,
+    loadTimes: async (userIds: string[]) => {
+      const { data, error } = await supabase
+        .from("user_settings")
+        .select("user_id, weekly_review_time")
+        .in("user_id", userIds);
+      if (error) throw error;
+      return data ?? [];
+    },
     loadRows: async (userIds: string[]) => {
       const { data, error } = await supabase
         .from("user_settings")
