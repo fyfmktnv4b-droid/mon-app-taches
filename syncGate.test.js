@@ -120,6 +120,13 @@ test("gate closed: the « Bilan du dimanche » switch is refused at once, withou
   assert.deepEqual(dataCalls, []);
 });
 
+test("gate closed: « Enregistrer les heures » is refused at once, without any call", async () => {
+  setServerGate(false);
+  await assert.rejects(settings.setReminderTimes({ morning: "07:30", weeklyReview: "21:30" }), ServerGateClosedError);
+  await assert.rejects(settings.setReminderTimes({ morning: null, weeklyReview: undefined }), ServerGateClosedError);
+  assert.deepEqual(dataCalls, []);
+});
+
 // --- Régression : porte ouverte, tout se passe comme avant ---
 
 test("gate open: a write goes straight to the server and the queue stays empty", async () => {
@@ -138,6 +145,36 @@ test("gate open: the queue is replayed in order and emptied", async () => {
   assert.deepEqual(dataCalls, ["tasks", "rpc:set_routine_check"]);
   assert.equal((await storage.getPendingMutations()).length, 0);
   setServerGate(false);
+});
+
+test("gate open: « Enregistrer les heures » is ONE update with both times; unchecked review leaves its time out", async () => {
+  setServerGate(true);
+  const realFrom = supabase.from;
+  const realGetUser = supabase.auth.getUser;
+  const updates = [];
+  supabase.auth.getUser = async () => ({ data: { user: { id: "user-A" } }, error: null });
+  supabase.from = (table) => {
+    const query = {
+      update: (values) => { updates.push([table, values]); return query; },
+      eq: () => query,
+      then: (ok, ko) => Promise.resolve({ data: null, error: null }).then(ok, ko),
+    };
+    return query;
+  };
+  try {
+    await settings.setReminderTimes({ morning: "07:30", weeklyReview: "21:30" });
+    await settings.setReminderTimes({ morning: null, weeklyReview: null });
+    await settings.setReminderTimes({ morning: "08:00", weeklyReview: undefined });
+    assert.deepEqual(updates, [
+      ["user_settings", { morning_reminder_time: "07:30", weekly_review_time: "21:30" }],
+      ["user_settings", { morning_reminder_time: null, weekly_review_time: null }],
+      ["user_settings", { morning_reminder_time: "08:00" }],
+    ]);
+  } finally {
+    supabase.from = realFrom;
+    supabase.auth.getUser = realGetUser;
+    setServerGate(false);
+  }
 });
 
 // --- Jeton expiré pendant l'usage : porte encore ouverte, le SDK n'a plus de session ---

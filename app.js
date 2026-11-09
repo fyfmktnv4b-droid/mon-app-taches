@@ -8,7 +8,8 @@ import { cacheOwner } from "./lastUserLogic.js";
 import { MAX_TASK_LENGTH, longestTooLongLine, importanceFields } from "./syncLogic.js";
 import { getImportant, getOthers, getUnsorted, getSorted, splitActiveAndArchived, splitOpenAndDone } from "./quadrants.js";
 import { fullExportJson } from "./export.js";
-import { getSettings, setMorningReminderTime, setNotificationsEnabled, setWeeklyReviewEnabled } from "./settings.js";
+import { getSettings, setReminderTimes, setNotificationsEnabled, setWeeklyReviewEnabled } from "./settings.js";
+import { parseWeeklyReviewTime, weeklyReviewTimeForInput } from "./settingsLogic.js";
 import { subscribeToPush, unsubscribeFromPush, hasPushSubscription } from "./push.js";
 import { pickQuoteForDate } from "./quotes.js";
 import { sceneForDay } from "./dayScenes.js";
@@ -766,34 +767,75 @@ async function renderSettingsView() {
         Heure du rappel matinal
         <input type="time" id="morning-reminder-time" value="${settings.morning_reminder_time ? settings.morning_reminder_time.slice(0, 5) : ""}">
       </label>
-      <button type="submit">Enregistrer l'heure</button>
       <label class="routine-check">
         <input type="checkbox" role="switch" id="weekly-review-enabled" ${settings.weekly_review_enabled ? "checked" : ""}>
         <span>Bilan du dimanche</span>
       </label>
+      <label>
+        Heure du bilan
+        <input type="time" id="weekly-review-time" value="${weeklyReviewTimeForInput(settings.weekly_review_time)}" aria-describedby="weekly-review-time-error" ${settings.weekly_review_enabled ? "" : "disabled"}>
+      </label>
+      <p id="weekly-review-time-error" class="field-error" role="alert"></p>
+      <button type="submit" id="save-reminder-times">Enregistrer les heures</button>
     </form>
     <button id="toggle-notifications">${notificationsOn ? "Désactiver" : "Activer"} les notifications</button>
   `;
 
   wireBackLink();
+  const weeklyReview = document.getElementById("weekly-review-enabled");
+  const weeklyTime = document.getElementById("weekly-review-time");
+  const weeklyTimeError = document.getElementById("weekly-review-time-error");
+  const saveTimes = document.getElementById("save-reminder-times");
+  const showWeeklyTimeError = (message) => {
+    weeklyTimeError.textContent = message;
+    if (message) weeklyTime.setAttribute("aria-invalid", "true");
+    else weeklyTime.removeAttribute("aria-invalid");
+  };
+  weeklyTime.addEventListener("input", () => showWeeklyTimeError(""));
+
+  // « Enregistrer les heures » : tout ou rien. Une heure du bilan refusée
+  // n'envoie rien, pas même l'heure du matin. Case décochée : l'heure du bilan
+  // n'est ni vérifiée ni envoyée. En cas d'échec d'écriture, les saisies
+  // restent à l'écran pour réessayer.
   document.getElementById("settings-form").addEventListener("submit", (event) => {
     event.preventDefault();
-    const value = document.getElementById("morning-reminder-time").value;
-    safely(() => setMorningReminderTime(value || null));
+    const morning = document.getElementById("morning-reminder-time").value || null;
+    let weeklyReviewTime;
+    if (weeklyReview.checked) {
+      const parsed = parseWeeklyReviewTime(weeklyTime.value);
+      if (parsed.error) {
+        showWeeklyTimeError(parsed.error);
+        return;
+      }
+      weeklyReviewTime = parsed.value;
+    }
+    showWeeklyTimeError("");
+    saveTimes.disabled = true;
+    safely(async () => {
+      try {
+        await setReminderTimes({ morning, weeklyReview: weeklyReviewTime });
+      } catch (err) {
+        saveTimes.disabled = false;
+        throw err;
+      }
+    });
   });
 
   // Enregistré dès le toucher. En cas d'échec, la case reprend son état :
   // elle ne doit jamais afficher autre chose que ce que le serveur connaît.
-  const weeklyReview = document.getElementById("weekly-review-enabled");
+  // L'heure du bilan est grisée tant que la case est décochée.
   weeklyReview.addEventListener("change", () => {
     const wanted = weeklyReview.checked;
     weeklyReview.disabled = true;
+    weeklyTime.disabled = !wanted;
+    if (!wanted) showWeeklyTimeError("");
     safely(async () => {
       try {
         await setWeeklyReviewEnabled(wanted);
       } catch (err) {
         weeklyReview.checked = !wanted;
         weeklyReview.disabled = false;
+        weeklyTime.disabled = wanted;
         throw err;
       }
     });

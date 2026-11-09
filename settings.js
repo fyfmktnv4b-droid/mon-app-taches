@@ -13,18 +13,23 @@ export async function getSettings() {
   const user = await requireUser();
   const { data, error } = await supabase
     .from("user_settings")
-    .select("morning_reminder_time, notifications_enabled, timezone, weekly_review_enabled")
+    .select("morning_reminder_time, notifications_enabled, timezone, weekly_review_enabled, weekly_review_time")
     .eq("user_id", user.id)
     .single();
   if (error) throw error;
   return data;
 }
 
-export async function setMorningReminderTime(time) {
+// « Enregistrer les heures » : une seule écriture pour les deux heures.
+// weeklyReview à undefined (case « Bilan du dimanche » décochée) : l'heure du
+// bilan n'est pas envoyée, la base garde la sienne.
+export async function setReminderTimes({ morning, weeklyReview }) {
   const user = await requireUser();
+  const values = { morning_reminder_time: morning };
+  if (weeklyReview !== undefined) values.weekly_review_time = weeklyReview;
   const { error } = await supabase
     .from("user_settings")
-    .update({ morning_reminder_time: time })
+    .update(values)
     .eq("user_id", user.id);
   if (error) throw error;
 }

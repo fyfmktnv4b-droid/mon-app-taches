@@ -242,6 +242,10 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 }
 #capture-submit svg { width: 24px; height: 24px; stroke: var(--cream); }
 #settings-form { display: flex; flex-direction: column; gap: 8px; max-width: 320px; margin-bottom: 20px; }
+#settings-form input[type="time"] { min-height: 44px; }
+#settings-form input:disabled { color: var(--ink-muted); }
+.field-error { margin: 0; color: var(--error); font-size: 14px; }
+.field-error:empty { display: none; }
 
 /* Lignes de tâche */
 .task-row { padding: 4px 0; }

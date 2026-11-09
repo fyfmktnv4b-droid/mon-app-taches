@@ -2,7 +2,7 @@
 // file listed in ASSETS below. This is what makes the browser notice a
 // new service worker and refresh its cache — there's no build tool here
 // to hash files automatically, so this is a manual, required step.
-const CACHE_VERSION = "v41";
+const CACHE_VERSION = "v42";
 const CACHE_NAME = `mon-app-taches-${CACHE_VERSION}`;
 
 // Boîte aux lettres vers l'app (voir openRequest.js, qui porte les mêmes noms).
@@ -39,6 +39,7 @@ const ASSETS = [
   "./vendor/tslib-2.8.1.js",
   "./push.js",
   "./settings.js",
+  "./settingsLogic.js",
   "./quotes.js",
   "./dayScenes.js",
   "./localDate.js",
