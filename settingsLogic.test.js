@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   WEEKLY_REVIEW_TIME_MIN, WEEKLY_REVIEW_TIME_MAX, WEEKLY_REVIEW_TIME_DEFAULT, WEEKLY_REVIEW_TIME_ERROR,
-  weeklyReviewTimeForInput, parseWeeklyReviewTime,
+  SAVED_TIMES_MESSAGE, SAVED_SWITCH_MESSAGE, weeklyReviewTimeForInput, parseWeeklyReviewTime,
 } from "./settingsLogic.js";
 import { WEEKLY_REVIEW_SCHEDULE, WEEKLY_REVIEW_TIME_RANGE } from "./supabase/functions/send-reminders/reminderLogic.js";
 import { WEEK_CLOSING_MINUTES } from "./bilanLogic.js";
@@ -51,4 +51,20 @@ test("weeklyReviewTimeForInput : l'heure enregistrée, sinon 20:00", () => {
   assert.equal(weeklyReviewTimeForInput(null), "20:00");
   assert.equal(weeklyReviewTimeForInput(undefined), "20:00");
   assert.equal(weeklyReviewTimeForInput(""), "20:00");
+});
+
+test("les confirmations d'enregistrement sont celles demandées", () => {
+  assert.equal(SAVED_TIMES_MESSAGE, "Ces paramètres sont enregistrés.");
+  assert.equal(SAVED_SWITCH_MESSAGE, "Ce réglage est enregistré.");
+});
+
+// Réglages (v43) : l'heure et l'interrupteur s'enregistrent sans redessiner
+// l'écran, et chaque confirmation a sa zone role="status".
+test("Réglages : enregistrements sans redessin, zones de confirmation role=status", () => {
+  const app = readFileSync(new URL("./app.js", import.meta.url), "utf8");
+  const settingsView = app.slice(app.indexOf("async function renderSettingsView"), app.indexOf("async function render()"));
+  assert.match(settingsView, /setReminderTimes\([^)]*\), \{ redraw: false \}\)/);
+  assert.match(settingsView, /setWeeklyReviewEnabled\(wanted\);[\s\S]*?\}, \{ redraw: false \}\)/);
+  assert.match(settingsView, /<p id="weekly-review-enabled-status" class="field-status" role="status"><\/p>/);
+  assert.match(settingsView, /<p id="save-reminder-times-status" class="field-status" role="status"><\/p>/);
 });

@@ -9,7 +9,9 @@ import { MAX_TASK_LENGTH, longestTooLongLine, importanceFields } from "./syncLog
 import { getImportant, getOthers, getUnsorted, getSorted, splitActiveAndArchived, splitOpenAndDone } from "./quadrants.js";
 import { fullExportJson } from "./export.js";
 import { getSettings, setReminderTimes, setNotificationsEnabled, setWeeklyReviewEnabled } from "./settings.js";
-import { parseWeeklyReviewTime, weeklyReviewTimeForInput } from "./settingsLogic.js";
+import {
+  parseWeeklyReviewTime, weeklyReviewTimeForInput, SAVED_TIMES_MESSAGE, SAVED_SWITCH_MESSAGE,
+} from "./settingsLogic.js";
 import { subscribeToPush, unsubscribeFromPush, hasPushSubscription } from "./push.js";
 import { pickQuoteForDate } from "./quotes.js";
 import { sceneForDay } from "./dayScenes.js";
@@ -378,14 +380,21 @@ function clearAppError() {
   appError.textContent = "";
 }
 
-async function safely(fn) {
+// Lance une action : en cas d'erreur, l'affiche dans #app-error ; en cas de
+// réussite, redessine l'écran. `redraw: false` (écran Réglages) : pas de
+// redessin, l'écran reste tel quel et l'appelant affiche sa confirmation ;
+// seule l'ancienne erreur est effacée, comme le ferait le redessin.
+// Renvoie vrai si l'action a réussi.
+async function safely(fn, { redraw = true } = {}) {
   try {
     await fn();
   } catch (err) {
     showAppError(err);
-    return;
+    return false;
   }
-  render();
+  if (redraw) render();
+  else clearAppError();
+  return true;
 }
 
 function todayDateString() {
@@ -771,12 +780,14 @@ async function renderSettingsView() {
         <input type="checkbox" role="switch" id="weekly-review-enabled" ${settings.weekly_review_enabled ? "checked" : ""}>
         <span>Bilan du dimanche</span>
       </label>
+      <p id="weekly-review-enabled-status" class="field-status" role="status"></p>
       <label>
         Heure du bilan
         <input type="time" id="weekly-review-time" value="${weeklyReviewTimeForInput(settings.weekly_review_time)}" aria-describedby="weekly-review-time-error" ${settings.weekly_review_enabled ? "" : "disabled"}>
       </label>
       <p id="weekly-review-time-error" class="field-error" role="alert"></p>
       <button type="submit" id="save-reminder-times">Enregistrer les heures</button>
+      <p id="save-reminder-times-status" class="field-status" role="status"></p>
     </form>
     <button id="toggle-notifications">${notificationsOn ? "Désactiver" : "Activer"} les notifications</button>
   `;
@@ -793,12 +804,35 @@ async function renderSettingsView() {
   };
   weeklyTime.addEventListener("input", () => showWeeklyTimeError(""));
 
+  // Confirmations : affichées après une réussite seulement, effacées dès la
+  // modification suivante (un des trois champs) ou le prochain enregistrement.
+  // `edits` compte les modifications : une réponse arrivée après une nouvelle
+  // saisie ne confirme pas ce qui est maintenant à l'écran.
+  const form = document.getElementById("settings-form");
+  const switchStatus = document.getElementById("weekly-review-enabled-status");
+  const timesStatus = document.getElementById("save-reminder-times-status");
+  let edits = 0;
+  // Heure du bilan enregistrée : le champ grisé (case décochée) l'affiche
+  // toujours, jamais une saisie qui ne sera pas envoyée (le redessin le
+  // faisait avant la v43).
+  let storedWeeklyTime = weeklyReviewTimeForInput(settings.weekly_review_time);
+  const clearSaved = () => {
+    edits += 1;
+    switchStatus.textContent = "";
+    timesStatus.textContent = "";
+  };
+  // L'interrupteur efface lui-même, au début de son propre enregistrement.
+  const onEdit = (event) => { if (event.target !== weeklyReview) clearSaved(); };
+  form.addEventListener("input", onEdit);
+  form.addEventListener("change", onEdit);
+
   // « Enregistrer les heures » : tout ou rien. Une heure du bilan refusée
   // n'envoie rien, pas même l'heure du matin. Case décochée : l'heure du bilan
   // n'est ni vérifiée ni envoyée. En cas d'échec d'écriture, les saisies
   // restent à l'écran pour réessayer.
-  document.getElementById("settings-form").addEventListener("submit", (event) => {
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    clearSaved();
     const morning = document.getElementById("morning-reminder-time").value || null;
     let weeklyReviewTime;
     if (weeklyReview.checked) {
@@ -811,34 +845,44 @@ async function renderSettingsView() {
     }
     showWeeklyTimeError("");
     saveTimes.disabled = true;
-    safely(async () => {
-      try {
-        await setReminderTimes({ morning, weeklyReview: weeklyReviewTime });
-      } catch (err) {
-        saveTimes.disabled = false;
-        throw err;
-      }
-    });
+    const startedAt = edits;
+    // Pas de redessin : l'écran garde les saisies. Réussite ou échec, le
+    // bouton est réactivé ; en cas d'échec, l'erreur habituelle et rien d'autre.
+    const saved = await safely(() => setReminderTimes({ morning, weeklyReview: weeklyReviewTime }), { redraw: false });
+    saveTimes.disabled = false;
+    if (!saved) return;
+    // Heure envoyée : c'est la nouvelle heure enregistrée. Champ vidé : NULL
+    // enregistré, l'heure par défaut (20:00) affichée. Case décochée : l'heure
+    // n'a pas été envoyée, le champ grisé reprend celle qui est enregistrée.
+    if (weeklyReviewTime !== undefined) storedWeeklyTime = weeklyReviewTimeForInput(weeklyReviewTime);
+    if (weeklyReviewTime == null) weeklyTime.value = storedWeeklyTime;
+    if (edits === startedAt) timesStatus.textContent = SAVED_TIMES_MESSAGE;
   });
 
   // Enregistré dès le toucher. En cas d'échec, la case reprend son état :
   // elle ne doit jamais afficher autre chose que ce que le serveur connaît.
   // L'heure du bilan est grisée tant que la case est décochée.
-  weeklyReview.addEventListener("change", () => {
+  // Pas de redessin non plus : en cas de réussite, la case est réactivée et la
+  // confirmation s'affiche sous elle.
+  weeklyReview.addEventListener("change", async () => {
     const wanted = weeklyReview.checked;
     weeklyReview.disabled = true;
     weeklyTime.disabled = !wanted;
     if (!wanted) showWeeklyTimeError("");
-    safely(async () => {
+    clearSaved();
+    const startedAt = edits;
+    const saved = await safely(async () => {
       try {
         await setWeeklyReviewEnabled(wanted);
       } catch (err) {
         weeklyReview.checked = !wanted;
-        weeklyReview.disabled = false;
         weeklyTime.disabled = wanted;
         throw err;
       }
-    });
+    }, { redraw: false });
+    weeklyReview.disabled = false;
+    if (saved && !wanted) weeklyTime.value = storedWeeklyTime;
+    if (saved && edits === startedAt) switchStatus.textContent = SAVED_SWITCH_MESSAGE;
   });
 
   document.getElementById("toggle-notifications").addEventListener("click", () => {

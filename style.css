@@ -246,6 +246,14 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 #settings-form input:disabled { color: var(--ink-muted); }
 .field-error { margin: 0; color: var(--error); font-size: 14px; }
 .field-error:empty { display: none; }
+/* Confirmation d'enregistrement (role="status"). Vide : retirée de la mise en
+   page mais gardée pour VoiceOver (un display: none l'empêcherait d'annoncer
+   le texte quand il arrive). */
+.field-status { margin: 0; color: var(--sage-dark); font-size: 14px; font-weight: 600; }
+.field-status:empty {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
 
 /* Lignes de tâche */
 .task-row { padding: 4px 0; }

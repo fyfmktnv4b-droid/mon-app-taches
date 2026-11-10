@@ -34,3 +34,7 @@ export function parseWeeklyReviewTime(input) {
   }
   return { value: s === 0 ? `${match[1]}:${match[2]}` : text };
 }
+
+// Confirmations de l'écran Réglages (zones role="status"), après une réussite.
+export const SAVED_TIMES_MESSAGE = "Ces paramètres sont enregistrés.";
+export const SAVED_SWITCH_MESSAGE = "Ce réglage est enregistré.";
