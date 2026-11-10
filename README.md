@@ -9,7 +9,7 @@ Dans l'ordre où on les rencontre en ouvrant l'app :
 - **Écran de chargement** : le logo sur fond vert, le temps de vérifier la connexion (au moins 1 seconde, 5 secondes au plus). L'écran de connexion n'apparaît que s'il faut vraiment se connecter.
 - **Connexion** : par e-mail et mot de passe.
 - **Accueil** : la date, une citation et une illustration du jour, puis le bouton « Commencer ». Il est grisé pendant le chargement.
-- **Routine du matin** : quelques cases à cocher. « Continuer » quand tout est coché, ou « Passer pour aujourd'hui ». Elle n'est proposée que si elle n'est ni faite ni passée.
+- **Routine du matin** : quelques cases à cocher. « Continuer » quand tout est coché, ou « Passer pour aujourd'hui ». Elle n'est proposée que si elle n'est ni faite ni passée. Rouverte depuis le menu (« Ma routine »), elle a en plus un bouton « Fermer », et ses trois boutons mènent à « Aujourd'hui ».
 - **À reprendre aujourd'hui** : les tâches Important ou Autres des jours précédents qui ne sont pas terminées. Pour chacune :
   - **Récupérer** : elle retourne dans sa boîte, sans son ancien rappel ;
   - **Valider** : elle est terminée et comptée pour la veille ;
@@ -27,7 +27,8 @@ Dans l'ordre où on les rencontre en ouvrant l'app :
   - un rappel ponctuel par tâche. Une heure déjà passée est refusée ;
   - une notification le dimanche soir, à l'heure choisie entre 20:00 et 23:00 (20:00 par défaut), qui ouvre directement le bilan de la semaine. Le bilan, lui, est prêt dès 20:00.
 - **Historique** : les tâches terminées les jours précédents, en lecture seule.
-- **Réglages** : l'heure du rappel du matin, la notification du dimanche et son heure, et l'activation des notifications sur l'appareil. « Enregistrer les heures » enregistre les deux heures ensemble, ou aucune : une heure du bilan hors de 20:00–23:00 est refusée avec un message sous le champ. Ils demandent le réseau.
+- **Réglages** : l'heure du rappel du matin, la notification du dimanche et son heure, et l'activation des notifications sur l'appareil. « Enregistrer les heures » enregistre les deux heures ensemble, ou aucune : une heure du bilan hors de 20:00–23:00 est refusée avec un message sous le champ. Ils demandent le réseau. Après un enregistrement réussi, l'écran reste tel quel et une ligne le confirme : « Ces paramètres sont enregistrés. » sous le bouton, « Ce réglage est enregistré. » sous la case du bilan. Elle disparaît à la modification suivante.
+- **Écrans du menu** (Bilan de la semaine, Historique, Réglages, Ma routine) : un bouton « Fermer » en bas de l'écran, le même partout, qui ramène toujours à « Aujourd'hui », quel que soit l'écran précédent.
 - **Sauvegarde** : « Sauvegarder mes tâches » télécharge un fichier JSON (un format texte standard) avec les tâches et la routine.
 - **Hors-ligne et synchronisation** : l'app garde une copie locale des données. Une modification faite sans réseau est mise dans une file d'attente, puis envoyée dans l'ordre au retour du réseau. Entre deux appareils, la dernière modification arrivée l'emporte.
 
@@ -95,7 +96,8 @@ L'interface elle-même n'est pas testée automatiquement : elle se vérifie dans
 | `localDate.js` | Dates et heures locales de l'appareil |
 | `routineLogic.js`, `routines.js`, `routineBlock.js` | Routine du matin et suivis quotidiens |
 | `tasks.js`, `settings.js`, `push.js` | Accès aux tâches, aux réglages et aux notifications |
-| `settingsLogic.js` | Heure du bilan du dimanche : bornes (les mêmes que la base et la fonction de rappels) et vérification |
+| `settingsLogic.js` | Heure du bilan du dimanche : bornes (les mêmes que la base et la fonction de rappels) et vérification ; textes de confirmation des Réglages |
+| `closeFooter.js` | Bouton « Fermer » commun des écrans du menu |
 | `sync.js`, `syncLogic.js`, `storage.js` | Hors-ligne : copie locale, file d'attente, synchronisation |
 | `supabaseClient.js` | Connexion au projet Supabase |
 | `export.js`, `quotes.js`, `dayScenes.js` | Sauvegarde JSON, citations et illustrations de l'accueil |
