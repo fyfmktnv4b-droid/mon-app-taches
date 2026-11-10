@@ -24,6 +24,7 @@ import { pendingReprise, bannerTitle, bannerSubtitle } from "./repriseLogic.js";
 import { loadTasksForReprise, loadYesterdayQuestions } from "./reprise.js";
 import { openRepriseScreen, handledIdsFor, abandonedIds } from "./repriseScreen.js";
 import { openBilanScreen } from "./bilanScreen.js";
+import { closeFooterHtml } from "./closeFooter.js";
 import { takeOpenRequest } from "./openRequest.js";
 import { MORNING_KEYS, MORNING_LABELS, SKIP_KEY, isChecked, isMorningDone, shouldShowRoutine } from "./routineLogic.js";
 
@@ -74,7 +75,18 @@ const navHistory = document.getElementById("nav-history");
 const navSettings = document.getElementById("nav-settings");
 const navBilan = document.getElementById("nav-bilan");
 
+// « Fermer » (closeFooter.js) des écrans Historique et Réglages : sous la zone
+// qui défile, à la place de la barre de saisie ; et celui de « Ma routine »,
+// affiché seulement quand elle est ouverte depuis le menu.
+mainView.insertAdjacentHTML("afterend", closeFooterHtml());
+const viewFooter = mainView.nextElementSibling;
+viewFooter.hidden = true;
+routineSection.insertAdjacentHTML("beforeend", closeFooterHtml());
+const routineFooter = routineSection.lastElementChild;
+routineFooter.hidden = true;
+
 let currentView = "main";
+let routineFromMenu = false; // « Ma routine » ouverte depuis le menu (et non au démarrage)
 let unsortedOpen = false; // bandeau « À trier » déplié ?
 // Bande de routine : un seul élément, gardé d'un rendu à l'autre. Si on le
 // recréait vide à chaque rendu, l'écran raccourcirait d'une centaine de px le
@@ -139,7 +151,7 @@ function showWelcome() {
   authInfo.textContent = "";
   repriseOffered = false;
   // Notification touchée : le Bilan prend la place de l'accueil, sans passer
-  // par lui. « Fermer » mènera aux tâches (accueil et routine sautés cette fois).
+  // par lui. « Fermer » mènera à « Aujourd'hui » (accueil et routine sautés cette fois).
   if (bilanRequested) {
     bilanRequested = false;
     showBilan();
@@ -259,6 +271,9 @@ function showRoutineScreen() {
   bilanSection.hidden = true;
   routineSection.hidden = false;
   routineSkip.disabled = false;
+  // Depuis le menu seulement : « Fermer » en bas. Au démarrage, rien ne change.
+  routineFooter.hidden = !routineFromMenu;
+  routineSection.classList.toggle("from-menu", routineFromMenu);
   renderRoutineChecks();
 }
 
@@ -268,6 +283,7 @@ function showRoutineScreen() {
 // skipped earlier today. Never blocks entry: if anything here goes wrong,
 // fail open to the task screen rather than strand the user on a blank step.
 async function maybeShowRoutine() {
+  routineFromMenu = false;
   routineLocalDate = localDateString();
   let routine;
   try {
@@ -335,7 +351,8 @@ function showReprise(tasks, hier = { yesterday: null, questions: [] }) {
 }
 
 // Bilan de la semaine : plein écran, en lecture seule, recalculé à chaque
-// ouverture. « Fermer » ramène à l'écran d'où il a été ouvert.
+// ouverture. « Fermer » ramène à « Aujourd'hui », d'où qu'il ait été ouvert
+// (menu de n'importe quel écran, notification).
 function showBilan() {
   welcomeSection.hidden = true;
   routineSection.hidden = true;
@@ -343,7 +360,7 @@ function showBilan() {
   appSection.hidden = true;
   repriseSection.hidden = true;
   bilanSection.hidden = false;
-  openBilanScreen(bilanSection, { excludedIds: abandonedIds, onClose: enterApp });
+  openBilanScreen(bilanSection, { excludedIds: abandonedIds, onClose: closeToToday });
 }
 
 // Relève la boîte aux lettres (openRequest.js). Au chargement ou sur l'écran de
@@ -602,16 +619,22 @@ function setHeader(title) {
   headerDate.textContent = formatHeaderDate(new Date());
   headerTitle.textContent = title;
   captureForm.hidden = currentView !== "main";
+  viewFooter.hidden = currentView === "main";
 }
 
-const BACK_BUTTON = '<button type="button" class="back-link" id="back-main">‹ Aujourd\'hui</button>';
-
-function wireBackLink() {
-  document.getElementById("back-main").addEventListener("click", () => showView("main"));
+// « Fermer », sur tous les écrans du menu : toujours « Aujourd'hui », quel que
+// soit l'écran précédent. Depuis Historique ou Réglages, simple changement de
+// vue ; depuis un écran plein (Bilan, Ma routine), retour dans l'app.
+function closeToToday() {
+  routineFromMenu = false;
+  currentView = "main";
+  if (!appSection.hidden) return render();
+  return enterApp();
 }
 
 async function renderMainView() {
   const allTasks = await loadTasks();
+  if (currentView !== "main") return; // un autre écran a été demandé entre-temps (voir render)
   shownTasks = new Map(allTasks.map((t) => [t.id, t]));
   const today = todayDateString();
   const { active } = splitActiveAndArchived(allTasks, today);
@@ -733,16 +756,15 @@ async function renderMainView() {
 
 async function renderHistoryView() {
   const allTasks = await loadTasks();
+  if (currentView !== "history") return; // voir render
   const { archived } = splitActiveAndArchived(allTasks, todayDateString());
   archived.sort((a, b) => (b.completed_at ?? "").localeCompare(a.completed_at ?? ""));
 
   setHeader("Historique");
   mainView.dataset.view = "history";
   mainView.innerHTML = `
-    ${BACK_BUTTON}
     <div id="history-list">${archived.map(historyRowHtml).join("") || '<p class="empty">Aucune tâche archivée</p>'}</div>
   `;
-  wireBackLink();
   // Read-only per spec — no wireTaskRows here.
 }
 
@@ -754,23 +776,22 @@ async function renderSettingsView() {
   try {
     settings = await getSettings();
   } catch (_err) {
+    if (currentView !== "settings") return; // voir render
     setHeader("Réglages");
     mainView.dataset.view = "settings";
     mainView.innerHTML = `
-      ${BACK_BUTTON}
       <p class="empty">Réglages indisponibles hors-ligne — reconnecte-toi au réseau.</p>
     `;
-    wireBackLink();
     return;
   }
   // The flag is account-wide; the subscription is per-device. Only claim
   // notifications are on when this device is actually subscribed too.
   const subscribed = await hasPushSubscription();
+  if (currentView !== "settings") return; // voir render
   const notificationsOn = settings.notifications_enabled && subscribed;
   setHeader("Réglages");
   mainView.dataset.view = "settings";
   mainView.innerHTML = `
-    ${BACK_BUTTON}
     <form id="settings-form">
       <label>
         Heure du rappel matinal
@@ -792,7 +813,6 @@ async function renderSettingsView() {
     <button id="toggle-notifications">${notificationsOn ? "Désactiver" : "Activer"} les notifications</button>
   `;
 
-  wireBackLink();
   const weeklyReview = document.getElementById("weekly-review-enabled");
   const weeklyTime = document.getElementById("weekly-review-time");
   const weeklyTimeError = document.getElementById("weekly-review-time-error");
@@ -898,6 +918,10 @@ async function renderSettingsView() {
   });
 }
 
+// Chaque écran vérifie, après ses lectures, qu'il est toujours celui demandé :
+// sinon un rendu lent (relancé par la synchronisation au retour du réseau,
+// ou un écran ouvert juste avant « Fermer ») finirait après le suivant et le
+// remplacerait (« Fermer » mènerait alors aux Réglages au lieu d'Aujourd'hui).
 async function render() {
   try {
     if (currentView === "main") await renderMainView();
@@ -921,11 +945,19 @@ welcomeContinue.addEventListener("click", async () => {
   }
 });
 
-routineContinue.addEventListener("click", enterAfterRoutine);
+// Ouverte depuis le menu, « Continuer » et « Passer pour aujourd'hui » mènent à
+// « Aujourd'hui », comme « Fermer ». Au démarrage, la suite habituelle.
+const leaveRoutine = () => (routineFromMenu ? closeToToday() : enterAfterRoutine());
+
+routineContinue.addEventListener("click", leaveRoutine);
+routineFooter.addEventListener("click", (event) => {
+  if (event.target.closest("[data-close]")) closeToToday();
+});
 
 // Manual reopen from the task screen: always shows the routine, even if it
 // was completed or skipped today, so a box can still be checked later.
 openRoutine.addEventListener("click", async () => {
+  routineFromMenu = true;
   routineLocalDate = localDateString();
   try {
     routineState = (await loadRoutine(routineLocalDate)).checks ?? {};
@@ -944,7 +976,7 @@ routineSkip.addEventListener("click", () => {
   // Not awaited: a slow network must not hold the task screen back. The
   // write is queued locally if it fails.
   toggleRoutineCheck(routineLocalDate, SKIP_KEY, true).catch(console.error);
-  enterAfterRoutine();
+  leaveRoutine();
 });
 
 // Feuille « Heure du rappel » : le choix reste un brouillon local tant qu'on
@@ -1046,6 +1078,9 @@ function showView(view) {
 navHistory.addEventListener("click", () => showView("history"));
 navSettings.addEventListener("click", () => showView("settings"));
 navBilan.addEventListener("click", showBilan);
+viewFooter.addEventListener("click", (event) => {
+  if (event.target.closest("[data-close]")) closeToToday();
+});
 
 authForm.addEventListener("submit", async (event) => {
   event.preventDefault();

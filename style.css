@@ -217,11 +217,6 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
    (surtout celles à coins arrondis) au lieu de faire défiler la zone. */
 #main-view > * { flex-shrink: 0; }
 .chevron { width: 20px; height: 20px; flex: 0 0 auto; }
-.back-link {
-  align-self: flex-start; background: transparent; color: var(--sage-dark);
-  padding: 0 4px; font-weight: 600; font-size: 15px;
-}
-.back-link:hover { background: transparent; color: var(--sage-deep); }
 
 /* Barre de saisie : champ arrondi qui grandit (≈ 4 lignes) + bouton rond.
    16 px minimum dans le champ : en dessous, iOS zoome la page au focus. */
@@ -231,6 +226,23 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
   background: var(--cream); border-top: 1px solid var(--border-warm);
 }
 #capture-form[hidden] { display: none; }
+
+/* « Fermer » des écrans du menu (closeFooter.js) : Bilan, Historique, Réglages,
+   Ma routine ouverte depuis le menu. Bas d'écran pleine largeur sous un trait,
+   marge de sécurité de la barre de l'iPhone. Bouton « crème » : fond et bordure
+   des cartes, texte vert foncé ; le survol garde ce fond (sur iPhone, il reste
+   collé après un toucher, et celui des boutons passerait au vert). */
+.screen-footer {
+  flex: 0 0 auto; position: sticky; bottom: 0;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: var(--cream); border-top: 1px solid var(--border-warm);
+}
+.screen-footer[hidden] { display: none; }
+.screen-close, .screen-close:hover {
+  width: 100%; min-height: 52px; border-radius: 14px;
+  background: var(--card); border: 1px solid var(--border-warm);
+  color: var(--sage-deep); font-size: 16px; font-weight: 700;
+}
 #capture-input {
   flex: 1 1 auto; min-width: 0; resize: none; overflow-y: auto;
   min-height: 52px; max-height: 112px; padding: 14px 20px;
@@ -554,6 +566,11 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
   text-align: center;
 }
 #routine[hidden] { display: none; }
+/* Ouverte depuis le menu : « Fermer » collé en bas, pleine largeur ; le
+   contenu reste centré dans l'espace au-dessus. Au démarrage, inchangé. */
+#routine.from-menu { padding-bottom: 0; }
+#routine.from-menu > h2 { margin-top: auto; }
+#routine > .screen-footer { align-self: stretch; margin: auto -24px 0; }
 #routine h2 {
   font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
   color: var(--sage-deep);
@@ -812,15 +829,6 @@ header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02e
 }
 .bilan-note { margin: -4px 4px 0; font-size: 12.5px; line-height: 1.35; color: var(--ink-muted); }
 .bilan-end { margin: 6px 8px 0; font-size: 15px; line-height: 1.45; color: var(--ink-muted); text-align: center; }
-.bilan-footer {
-  position: sticky; bottom: 0;
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
-  background: var(--cream); border-top: 1px solid var(--border-warm);
-}
-.bilan-close {
-  width: 100%; min-height: 52px; border-radius: 14px; border: none;
-  background: var(--sage-deep); color: var(--cream); font-size: 16px; font-weight: 700;
-}
 /* Texte lu par les lecteurs d'écran seulement (état de chaque jour). */
 .bilan-sr {
   position: absolute; width: 1px; height: 1px; overflow: hidden;

@@ -8,6 +8,7 @@ import {
 } from "./bilanLogic.js";
 import { DEFAULT_HABITS } from "./habits.js";
 import { loadLocalTasks, loadFreshTasks, loadWeekHabits } from "./bilan.js";
+import { closeFooterHtml } from "./closeFooter.js";
 
 const LOADING = "Chargement…";
 const HABITS_OFFLINE = "Indisponible hors-ligne";
@@ -81,9 +82,7 @@ function render() {
       ${habitsHtml(habits, today)}
       ${end ? `<p class="bilan-end">${escapeHtml(end)}</p>` : ""}
     </div>
-    <footer class="bilan-footer">
-      <button type="button" class="bilan-close" data-close>Fermer</button>
-    </footer>
+    ${closeFooterHtml()}
   `;
 }
 

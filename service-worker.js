@@ -40,6 +40,7 @@ const ASSETS = [
   "./push.js",
   "./settings.js",
   "./settingsLogic.js",
+  "./closeFooter.js",
   "./quotes.js",
   "./dayScenes.js",
   "./localDate.js",
