@@ -72,9 +72,11 @@ async function openBilan(page) {
   await page.waitFor(`${visible("bilan")} && !!document.querySelector("#bilan .bilan-hero-title")`, { label: "l'écran du bilan" });
 }
 
+// « Fermer » mène toujours à « Aujourd'hui » (v43).
 async function closeBilan(page) {
   await page.tapSelector("#bilan [data-close]");
-  await page.waitFor(visible("app"), { label: "l'écran principal après « Fermer »" });
+  await page.waitFor(`${visible("app")} && document.getElementById("header-title").textContent === "Aujourd'hui" && ${visible("capture-form")}`,
+    { label: "« Aujourd'hui » après « Fermer »" });
 }
 
 export async function run({ page, fake, appOrigin, log }) {

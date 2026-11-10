@@ -8,6 +8,11 @@
 //     champ), bornes 20:00 et 23:00, champ vidé = NULL puis 20:00 affiché,
 //     champ grisé et conservé quand la case est décochée, serveur coupé : la
 //     saisie reste à l'écran pour réessayer ;
+//   - sans redessin (v43) : après un enregistrement réussi (heures ou
+//     interrupteur), l'écran n'est ni reconstruit ni relu ; la confirmation
+//     « Ces paramètres sont enregistrés. » / « Ce réglage est enregistré. »
+//     s'affiche (role="status"), jamais après un échec ou un refus, et
+//     disparaît à la modification suivante ;
 //   - mesures et captures à 320, 375 et 390 px ;
 //   - l'ouverture du Bilan au toucher : le banc n'a pas de service worker, il
 //     dépose donc lui-même la marque dans la vraie boîte aux lettres (Cache
@@ -34,6 +39,10 @@ const TIME = "#weekly-review-time";
 const SAVE = "#save-reminder-times";
 const TIME_ERROR = "weekly-review-time-error";
 const ERROR_TEXT = "Choisis une heure entre 20:00 et 23:00. Rien n'a été enregistré.";
+const SWITCH_STATUS = "weekly-review-enabled-status";
+const TIMES_STATUS = "save-reminder-times-status";
+const SAVED_TIMES = "Ces paramètres sont enregistrés.";
+const SAVED_SWITCH = "Ce réglage est enregistré.";
 
 const visible = (id) => `!document.getElementById(${JSON.stringify(id)}).hidden`;
 
@@ -125,9 +134,11 @@ const MARK_LEFT = `caches.open(${JSON.stringify(OPEN_REQUEST_CACHE)}).then((c) =
 const markLeft = (page) => page.evaluate(MARK_LEFT);
 const bilanShown = `${visible("bilan")} && !!document.querySelector("#bilan .bilan-hero-title")`;
 
+// « Fermer » mène toujours à « Aujourd'hui » (v43).
 async function closeBilan(page) {
   await page.tapSelector("#bilan [data-close]");
-  await page.waitFor(visible("app"), { label: "l'écran principal après « Fermer »" });
+  await page.waitFor(`${visible("app")} && document.getElementById("header-title").textContent === "Aujourd'hui" && ${visible("capture-form")}`,
+    { label: "« Aujourd'hui » après « Fermer »" });
 }
 
 // --- Heure du bilan (v42) ------------------------------------------------------
@@ -147,12 +158,39 @@ const appErrorText = (page) => page.evaluate(`document.getElementById("app-error
 const formReady = `!!document.querySelector(${JSON.stringify(SAVE)}) && !document.querySelector(${JSON.stringify(SAVE)}).disabled && ${switchReady}`;
 const pause = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
-// Enregistre et attend que l'écran soit redessiné (signe d'une écriture réussie).
-async function saveAndWaitRender(page, label) {
-  await page.evaluate(`document.getElementById("settings-form").dataset.bench = "avant"; true`);
+const statusText = (page, id) => page.evaluate(`document.getElementById(${JSON.stringify(id)}).textContent`);
+const settingsReads = (fake) => fake.entries
+  .filter((e) => e.server === "api" && e.method === "GET" && e.target.includes("/rest/v1/user_settings")).length;
+
+// Repère posé sur le formulaire : un redessin de l'écran le ferait disparaître.
+const markForm = (page) => page.evaluate(`document.getElementById("settings-form").dataset.bench = "avant"; true`);
+async function assertNotRedrawn(page, fake, readsBefore, label) {
+  assert.equal(await page.evaluate(`document.getElementById("settings-form")?.dataset.bench ?? null`), "avant",
+    `${label} : l'écran ne doit pas être redessiné`);
+  assert.equal(settingsReads(fake), readsBefore, `${label} : les réglages ne doivent pas être relus`);
+}
+
+// Enregistre les heures et attend la confirmation, sans redessin ni relecture.
+async function saveAndConfirm(page, fake, label) {
+  await markForm(page);
+  const reads = settingsReads(fake);
   await page.tapSelector(SAVE);
-  await page.waitFor(`!!document.getElementById("settings-form") && !document.getElementById("settings-form").dataset.bench && ${formReady}`,
-    { label: `l'écran redessiné après ${label}` });
+  await page.waitFor(`document.getElementById(${JSON.stringify(TIMES_STATUS)})?.textContent === ${JSON.stringify(SAVED_TIMES)} && ${formReady}`,
+    { label: `la confirmation après ${label}` });
+  await assertNotRedrawn(page, fake, reads, label);
+}
+
+// Touche l'interrupteur et attend sa confirmation, sans redessin ni relecture.
+async function toggleAndConfirm(page, fake, row, wanted, label) {
+  await markForm(page);
+  const reads = settingsReads(fake);
+  await page.tapSelector(SWITCH_LABEL);
+  await waitForServer(() => row().weekly_review_enabled === wanted, label);
+  await page.waitFor(`document.getElementById(${JSON.stringify(SWITCH_STATUS)})?.textContent === ${JSON.stringify(SAVED_SWITCH)} && ${switchReady}`,
+    { label: `la confirmation après ${label}` });
+  assert.equal(await isChecked(page), wanted);
+  assert.equal(await statusText(page, TIMES_STATUS), "", "une seule confirmation à la fois");
+  await assertNotRedrawn(page, fake, reads, label);
 }
 
 async function reminderTimes({ page, fake, appOrigin, log, row, dir }) {
@@ -169,9 +207,36 @@ async function reminderTimes({ page, fake, appOrigin, log, row, dir }) {
   let before = patchCount(fake);
   await setValue(page, MORNING, "07:30");
   await setValue(page, TIME, "21:30");
-  await saveAndWaitRender(page, "07:30 et 21:30");
+  await saveAndConfirm(page, fake, "07:30 et 21:30");
   assert.deepEqual([row().morning_reminder_time, row().weekly_review_time], ["07:30", "21:30"]);
   assert.equal(patchCount(fake) - before, 1, "une seule écriture pour les deux heures");
+  assert.deepEqual([await valueOf(page, MORNING), await valueOf(page, TIME)], ["07:30", "21:30"], "les saisies restent à l'écran");
+  assert.equal(await statusText(page, SWITCH_STATUS), "");
+  // Confirmation sous le bouton, mesurée et capturée aux trois largeurs.
+  for (const width of WIDTHS) {
+    await page.resize(width);
+    await page.evaluate("new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)))");
+    const m = await page.evaluate(`(() => {
+      const el = document.getElementById(${JSON.stringify(TIMES_STATUS)});
+      el.scrollIntoView({ block: "center" });
+      const r = el.getBoundingClientRect();
+      const save = document.querySelector(${JSON.stringify(SAVE)}).getBoundingClientRect();
+      return { role: el.getAttribute("role"), left: r.left, right: r.right, height: r.height, below: r.top >= save.bottom,
+        pageOverflow: document.documentElement.scrollWidth > window.innerWidth };
+    })()`);
+    if (dir) await page.screenshot(join(dir, `reglages-confirmation-heures-${width}.png`));
+    assert.equal(m.role, "status");
+    assert.ok(m.height > 0 && m.below, `${width} px : confirmation sous le bouton`);
+    assert.ok(m.left >= 0 && m.right <= width, `${width} px : la confirmation dépasse de l'écran`);
+    assert.equal(m.pageOverflow, false, `${width} px : la page déborde`);
+  }
+  // Elle disparaît dès la modification suivante, quel que soit le champ.
+  await setValue(page, MORNING, "07:30");
+  assert.equal(await statusText(page, TIMES_STATUS), "", "effacée en modifiant l'heure du matin");
+  await saveAndConfirm(page, fake, "le même enregistrement");
+  await setValue(page, TIME, "21:30");
+  assert.equal(await statusText(page, TIMES_STATUS), "", "effacée en modifiant l'heure du bilan");
+  log("enregistrement sans redessin ni relecture ; « Ces paramètres sont enregistrés. » sous le bouton, effacé à la modification suivante");
   await page.goto(`${appOrigin}/`);
   await toMain(page);
   await openSettings(page);
@@ -182,6 +247,9 @@ async function reminderTimes({ page, fake, appOrigin, log, row, dir }) {
   // c. Tout ou rien : heure du bilan refusée, aucune requête, l'heure du matin
   //    non plus ; message sous le champ, saisie gardée à l'écran.
   for (const bad of ["19:30", "23:01"]) {
+    await setValue(page, MORNING, "07:30");
+    await setValue(page, TIME, "21:30");
+    await saveAndConfirm(page, fake, `avant ${bad}`);
     before = patchCount(fake);
     await setValue(page, MORNING, "08:15");
     await setValue(page, TIME, bad);
@@ -194,6 +262,7 @@ async function reminderTimes({ page, fake, appOrigin, log, row, dir }) {
     assert.deepEqual([row().morning_reminder_time, row().weekly_review_time], ["07:30", "21:30"], `${bad} : rien n'est écrit`);
     assert.deepEqual([await valueOf(page, MORNING), await valueOf(page, TIME)], ["08:15", bad], "la saisie reste à l'écran");
     assert.equal(await appErrorText(page), "");
+    assert.equal(await statusText(page, TIMES_STATUS), "", `${bad} : aucune confirmation`);
   }
   for (const width of WIDTHS) {
     await page.resize(width);
@@ -219,7 +288,7 @@ async function reminderTimes({ page, fake, appOrigin, log, row, dir }) {
   for (const good of ["23:00", "20:00"]) {
     await setValue(page, MORNING, "07:30");
     await setValue(page, TIME, good);
-    await saveAndWaitRender(page, good);
+    await saveAndConfirm(page, fake, good);
     assert.equal(row().weekly_review_time, good);
     assert.equal(await valueOf(page, TIME), good);
   }
@@ -227,9 +296,9 @@ async function reminderTimes({ page, fake, appOrigin, log, row, dir }) {
 
   // e. Champ vidé : NULL, puis 20:00 affiché.
   await setValue(page, TIME, "22:00");
-  await saveAndWaitRender(page, "22:00");
+  await saveAndConfirm(page, fake, "22:00");
   await setValue(page, TIME, "");
-  await saveAndWaitRender(page, "le champ vidé");
+  await saveAndConfirm(page, fake, "le champ vidé");
   assert.equal(row().weekly_review_time, null);
   assert.equal(await valueOf(page, TIME), "20:00");
   assert.equal(await errorText(page), "");
@@ -237,31 +306,54 @@ async function reminderTimes({ page, fake, appOrigin, log, row, dir }) {
 
   // f. Case décochée : champ grisé, non vérifié, heure du bilan conservée.
   await setValue(page, TIME, "22:00");
-  await saveAndWaitRender(page, "22:00");
-  await page.tapSelector(SWITCH_LABEL);
-  await waitForServer(() => row().weekly_review_enabled === false, "la case décochée");
+  await saveAndConfirm(page, fake, "22:00");
+  // Toucher l'interrupteur efface la confirmation des heures et affiche la sienne.
+  // Une heure saisie sans être enregistrée ne reste pas dans le champ grisé :
+  // il affiche l'heure enregistrée.
+  await setValue(page, TIME, "21:45");
+  await toggleAndConfirm(page, fake, row, false, "la case décochée");
+  assert.equal(await valueOf(page, TIME), "22:00", "champ grisé : l'heure enregistrée");
   await page.waitFor(`${formReady} && !document.querySelector(${JSON.stringify(SWITCH)}).checked && document.querySelector(${JSON.stringify(TIME)}).disabled`,
     { label: "l'heure du bilan grisée" });
   if (dir) await page.screenshot(join(dir, "reglages-heure-grisee.png"));
+  for (const width of WIDTHS) {
+    await page.resize(width);
+    await page.evaluate("new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)))");
+    const m = await page.evaluate(`(() => {
+      const el = document.getElementById(${JSON.stringify(SWITCH_STATUS)});
+      el.scrollIntoView({ block: "center" });
+      const r = el.getBoundingClientRect();
+      const label = document.querySelector(${JSON.stringify(SWITCH_LABEL)}).getBoundingClientRect();
+      const review = document.querySelector(${JSON.stringify(TIME)}).getBoundingClientRect();
+      return { role: el.getAttribute("role"), left: r.left, right: r.right, height: r.height,
+        between: r.top >= label.bottom && r.bottom <= review.top, pageOverflow: document.documentElement.scrollWidth > window.innerWidth };
+    })()`);
+    if (dir) await page.screenshot(join(dir, `reglages-confirmation-interrupteur-${width}.png`));
+    assert.equal(m.role, "status");
+    assert.ok(m.height > 0 && m.between, `${width} px : confirmation sous l'interrupteur`);
+    assert.ok(m.left >= 0 && m.right <= width, `${width} px : la confirmation dépasse de l'écran`);
+    assert.equal(m.pageOverflow, false, `${width} px : la page déborde`);
+  }
   await setValue(page, TIME, "19:00"); // invalide, mais non vérifiée : la case est décochée
+  assert.equal(await statusText(page, SWITCH_STATUS), "", "effacée en modifiant un champ");
   await setValue(page, MORNING, "09:00");
   before = patchCount(fake);
-  await saveAndWaitRender(page, "l'heure du matin seule");
+  await saveAndConfirm(page, fake, "l'heure du matin seule");
   assert.equal(patchCount(fake) - before, 1);
   assert.deepEqual([row().morning_reminder_time, row().weekly_review_time], ["09:00", "22:00"], "heure du bilan conservée");
   assert.equal(await errorText(page), "");
   assert.deepEqual([await valueOf(page, TIME), await isDisabled(page, TIME)], ["22:00", true]);
-  await page.tapSelector(SWITCH_LABEL);
-  await waitForServer(() => row().weekly_review_enabled === true, "la case recochée");
+  await toggleAndConfirm(page, fake, row, true, "la case recochée");
   await page.waitFor(`${formReady} && document.querySelector(${JSON.stringify(SWITCH)}).checked && !document.querySelector(${JSON.stringify(TIME)}).disabled`,
     { label: "l'heure du bilan de nouveau utilisable" });
   assert.equal(await valueOf(page, TIME), "22:00");
-  log("case décochée : heure grisée, non vérifiée, conservée ; recochée : 22:00");
+  log("case décochée : heure grisée, non vérifiée, conservée ; recochée : 22:00 ; « Ce réglage est enregistré. » sous la case, sans redessin");
 
   // g. Serveur coupé à l'enregistrement : message habituel, saisie gardée,
   //    bouton de nouveau utilisable ; on réessaie une fois le serveur revenu.
   await setValue(page, MORNING, "06:45");
   await setValue(page, TIME, "22:30");
+  await markForm(page);
   fake.setMode("down");
   try {
     await page.tapSelector(SAVE);
@@ -274,7 +366,10 @@ async function reminderTimes({ page, fake, appOrigin, log, row, dir }) {
   assert.deepEqual([row().morning_reminder_time, row().weekly_review_time], ["09:00", "22:00"], "rien n'a été écrit");
   assert.equal(await isChecked(page), true, "la case n'a pas bougé");
   assert.equal(await errorText(page), "");
-  await saveAndWaitRender(page, "le nouvel essai");
+  assert.equal(await statusText(page, TIMES_STATUS), "", "échec : aucune confirmation");
+  assert.equal(await statusText(page, SWITCH_STATUS), "", "échec : aucune confirmation");
+  assert.equal(await page.evaluate(`document.getElementById("settings-form").dataset.bench`), "avant", "échec : pas de redessin");
+  await saveAndConfirm(page, fake, "le nouvel essai");
   assert.deepEqual([row().morning_reminder_time, row().weekly_review_time], ["06:45", "22:30"]);
   assert.equal(await appErrorText(page), "");
   log("serveur coupé : saisie gardée, message habituel ; nouvel essai enregistré");
@@ -402,10 +497,7 @@ export async function run({ page, fake, appOrigin, log }) {
     }
 
     // 2. Coupé au toucher, enregistré, conservé après rechargement.
-    await page.tapSelector(SWITCH_LABEL);
-    await waitForServer(() => row().weekly_review_enabled === false, "l'écriture de l'interrupteur coupé");
-    await page.waitFor(switchReady, { label: "l'interrupteur après l'écriture" });
-    assert.equal(await isChecked(page), false);
+    await toggleAndConfirm(page, fake, row, false, "l'interrupteur coupé");
     await page.goto(`${appOrigin}/`);
     await toMain(page);
     await openSettings(page);
@@ -414,10 +506,8 @@ export async function run({ page, fake, appOrigin, log }) {
     if (dir) await page.screenshot(join(dir, "reglages-coupe.png"));
 
     // 3. Réactivé.
-    await page.tapSelector(SWITCH_LABEL);
-    await waitForServer(() => row().weekly_review_enabled === true, "l'écriture de l'interrupteur activé");
-    await page.waitFor(`${switchReady} && document.querySelector(${JSON.stringify(SWITCH)}).checked`, { label: "l'interrupteur réactivé" });
-    log("coupé puis réactivé, conservé après rechargement");
+    await toggleAndConfirm(page, fake, row, true, "l'interrupteur réactivé");
+    log("coupé puis réactivé, conservé après rechargement, confirmé sans redessin");
 
     await reminderTimes({ page, fake, appOrigin, log, row, dir });
 
@@ -428,7 +518,9 @@ export async function run({ page, fake, appOrigin, log }) {
     await page.waitFor(switchReady, { label: "l'interrupteur de nouveau utilisable" });
     assert.equal(await isChecked(page), true, "la case revient en arrière");
     assert.equal(row().weekly_review_enabled, true, "rien n'a été écrit");
-    log("écriture impossible : retour en arrière et message d'erreur");
+    assert.equal(await statusText(page, SWITCH_STATUS), "", "échec : aucune confirmation");
+    assert.equal(await statusText(page, TIMES_STATUS), "", "échec : aucune confirmation");
+    log("écriture impossible : retour en arrière et message d'erreur, aucune confirmation");
 
     // 5. Serveur coupé à l'ouverture : message habituel, aucun interrupteur.
     await page.goto(`${appOrigin}/`);
