@@ -18,6 +18,11 @@ configuration git.
 - Écrire ou adapter les tests, puis lancer `node --test` : tout doit être vert.
 - Les essais n'utilisent **jamais** le vrai Supabase : passer par le banc (`scripts/bench/`, voir son README).
 
+## Outillage Claude Code
+- Réglages partagés : `.claude/settings.json` (aucun nom, chemin perso ni secret). Réglages perso : `.claude/settings.local.json` et `CLAUDE.local.md` (ignorés par git).
+- Une migration appliquée ne se réécrit jamais : on en crée une nouvelle (toute modification dans `supabase/migrations/` demande validation).
+- Fin de chantier : `/fin-de-chantier <version>`.
+
 ## Interface
 - Couleurs uniquement via les variables de `:root` ; pas de rouge en dehors des erreurs.
 - Zones tactiles d'au moins 44 px.
