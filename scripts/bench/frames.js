@@ -23,6 +23,8 @@ export function snapshotInPage() {
   const routineBox = !!mv.querySelector("#routine-block .routine-block");
   const routineInputs = document.querySelectorAll("#routine-checks input").length;
   const loading = vis("screen-loading") && text(byId("screen-loading")).includes("Chargement");
+  // Menu réellement visible : ouvert ET dans un #app affiché (« Chargement… » le masque).
+  const menu = app && vis("menu-panel");
   const complete = {
     main: app && title === "Aujourd'hui" && mv.dataset.view === "main" && routineBox && vis("capture-form"),
     history: app && title === "Historique" && mv.dataset.view === "history" && !!mv.querySelector("#history-list"),
@@ -31,6 +33,7 @@ export function snapshotInPage() {
     routine: vis("routine") && routineInputs === 4,
   };
   const parts = [];
+  if (menu) parts.push("menu ouvert");
   if (app) {
     const blocks = mv.children.length;
     parts.push(`titre « ${title} », contenu ${blocks ? `${blocks} bloc(s)${routineBox ? " dont la routine" : mv.dataset.view === "main" ? ", sans la routine" : ""}` : "VIDE"}`);
@@ -46,7 +49,7 @@ export function snapshotInPage() {
     const r = c.getBoundingClientRect();
     return `${Math.round(r.top)}/${Math.round(r.height)}`;
   }).join(",") + `|${box.textContent.length}` : "";
-  return { shown, loading, complete, desc: parts.join(" + "), sig: `${shown.join(",")}|${title}|${layout}` };
+  return { shown, loading, menu, complete, desc: parts.join(" + "), sig: `${shown.join(",")}|${title}|${layout}` };
 }
 
 // Expression à évaluer dans la page : démarre le relevé, puis lance `action`
@@ -134,5 +137,34 @@ export function checkStaysOn(frames, on) {
     if (f.loading) problems.push(`« Chargement… » affiché à ${f.t} ms`);
     else if (!f.complete[on]) problems.push(`état intermédiaire à ${f.t} ms : ${f.desc}`);
   }
+  return problems;
+}
+
+// Changement d'écran touché DEPUIS LE MENU (v45) : le menu reste ouvert jusqu'à
+// ce que l'écran d'arrivée soit prêt, puis menu fermé et écran d'arrivée
+// apparaissent dans la MÊME image. Jamais l'écran de départ sans son menu
+// (l'ancien « Aujourd'hui » vu 2 à 3 images). `from === to` : on touche
+// l'entrée de l'écran où l'on est déjà ; l'arrivée ne se distingue alors pas
+// du départ, seul « Chargement… » (`expectLoading`, réseau lent) marque la fin
+// de l'attente. Le relevé commence menu ouvert.
+export function checkMenuTransition(frames, { from, to, expectLoading = false, loadingAfterMs = LOADING_AFTER_MS }) {
+  const same = from === to;
+  const problems = same ? [] : checkTransition(frames, { from, to, loadingAfterMs }).problems;
+  let sawLoading = false;
+  let arrived = false;
+  for (const f of frames) {
+    if (f.loading) { sawLoading = true; continue; }
+    if (!same && !arrived && f.complete[to]) {
+      arrived = true;
+      if (f.menu) problems.push(`écran d'arrivée complet avec le menu encore ouvert, à ${f.t} ms`);
+    } else if ((!same || expectLoading) && !arrived && !sawLoading && !f.menu && f.complete[from]) {
+      problems.push(`écran de départ SANS menu à ${f.t} ms : le menu s'est refermé avant l'arrivée`);
+    }
+  }
+  const last = frames.at(-1);
+  if (last?.menu) problems.push(`le menu est resté ouvert (dernière image à ${last.t} ms)`);
+  if (same && !last?.complete[to]) problems.push(`l'écran n'est pas complet à la fin : ${last?.desc ?? "aucune image"}`);
+  if (same && expectLoading && !sawLoading) problems.push("réseau lent : aucun « Chargement… »");
+  if (same && !expectLoading && sawLoading) problems.push("« Chargement… » alors que la lecture est rapide");
   return problems;
 }
