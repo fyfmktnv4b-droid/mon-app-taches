@@ -62,6 +62,13 @@
   <!-- Bilan de la semaine (bilanScreen.js) : lecture seule, ouvert depuis le Menu. -->
   <section id="bilan" hidden></section>
 
+  <!-- « Chargement… » d'un changement d'écran (app.js, screenSwap.js) : la
+       seule zone de ce genre, montrée seulement si le nouvel écran met plus de
+       300 ms à être prêt. -->
+  <section id="screen-loading" role="status" hidden>
+    <p>Chargement…</p>
+  </section>
+
   <section id="app" hidden>
     <header>
       <div class="header-text">

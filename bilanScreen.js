@@ -7,10 +7,9 @@ import {
   habitCountLabel, barAriaLabel, endMessage,
 } from "./bilanLogic.js";
 import { DEFAULT_HABITS } from "./habits.js";
-import { loadLocalTasks, loadFreshTasks, loadWeekHabits } from "./bilan.js";
+import { loadBilanData } from "./bilan.js";
 import { closeFooterHtml } from "./closeFooter.js";
 
-const LOADING = "Chargement…";
 const HABITS_OFFLINE = "Indisponible hors-ligne";
 const HABITS_FROM_CACHE = "Hors-ligne : d'après cet appareil";
 const UNDATED_HINT = "Terminées avant que l'app note les dates";
@@ -24,35 +23,32 @@ let root = null;
 let state = null;
 let openCount = 0; // une lecture lente d'une ouverture précédente ne doit rien afficher
 
+// Ouvre (ou rafraîchit) le Bilan EN UN COUP : tout est lu d'abord (tâches et
+// habitudes, 2 s au plus chacune, cache sinon), puis l'écran est dessiné une
+// seule fois et `reveal()` le montre dans la même image. Pendant la lecture,
+// l'écran précédent reste affiché (le « Chargement… » éventuel est géré par
+// app.js). Renvoie faux, sans rien toucher, si une ouverture plus récente,
+// « Fermer » ou un autre écran (`isWanted`) a pris la place entre-temps.
 // `excludedIds` : tâches abandonnées sur « À reprendre » dont la suppression
 // n'est pas encore faite (repriseScreen.js, abandonedIds).
-export function openBilanScreen(section, { excludedIds = new Set(), onClose }) {
-  root = section;
+export async function openBilanScreen(section, {
+  excludedIds = new Set(), onClose, isWanted = () => true, reveal = () => {}, load = loadBilanData,
+}) {
   const openId = ++openCount;
   const now = new Date();
-  state = { now, today: localDateString(now), tasks: null, habits: null, excludedIds, onClose };
+  const today = localDateString(now);
+  const { tasks, habits } = await load(today);
+  if (openId !== openCount || !isWanted()) return false;
+  root = section;
+  state = { now, today, tasks, habits, excludedIds, onClose };
   if (!root.dataset.wired) {
     root.addEventListener("click", onClick);
     root.dataset.wired = "true";
   }
   render();
+  reveal();
   window.scrollTo(0, 0);
-
-  const current = () => state && openId === openCount;
-  // Tâches : le cache tout de suite, puis la lecture serveur (2 s au plus).
-  loadLocalTasks().then((tasks) => {
-    if (current() && state.tasks === null) { state.tasks = tasks; render(); }
-  });
-  loadFreshTasks().then((tasks) => {
-    if (current()) { state.tasks = tasks; render(); }
-  }).catch((err) => console.error(err));
-  // Habitudes : se remplissent dès que la lecture répond (2 s au plus).
-  loadWeekHabits(state.today).then((habits) => {
-    if (current()) { state.habits = habits; render(); }
-  }).catch((err) => {
-    console.error(err);
-    if (current()) { state.habits = { source: "unavailable" }; render(); }
-  });
+  return true;
 }
 
 function onClick(event) {
@@ -66,19 +62,17 @@ function onClick(event) {
 
 function render() {
   const { now, today, tasks, habits, excludedIds } = state;
-  // Tâches pas encore lues (tout début de l'ouverture) : aucun chiffre ni
-  // phrase inventés, seulement « Chargement… » et des tirets.
-  const summary = tasks === null ? null : weekSummary(tasks, now, undefined, excludedIds);
-  const end = summary ? endMessage(summary) : null;
+  const summary = weekSummary(tasks, now, undefined, excludedIds);
+  const end = endMessage(summary);
   root.innerHTML = `
     <header class="bilan-head">
       <p class="bilan-date">${escapeHtml(weekRangeLabel(today))}</p>
       <h1 class="bilan-title">Bilan de la semaine</h1>
     </header>
-    <div class="bilan-list" ${tasks === null ? 'aria-busy="true"' : ""}>
+    <div class="bilan-list">
       ${heroHtml(summary)}
       ${tilesHtml(summary, isClosingTime(now))}
-      ${summary?.undated ? undatedHtml(summary.undated) : ""}
+      ${summary.undated ? undatedHtml(summary.undated) : ""}
       ${habitsHtml(habits, today)}
       ${end ? `<p class="bilan-end">${escapeHtml(end)}</p>` : ""}
     </div>
@@ -88,15 +82,15 @@ function render() {
 
 // Barre : SVG à attributs (aucun style en ligne), couleurs par classes CSS.
 function heroHtml(summary) {
-  const segments = (summary ? barSegments(summary) : [])
+  const segments = barSegments(summary)
     .filter((s) => s.width > 0)
     .map((s) => `<rect class="bilan-seg" data-seg="${s.key}" x="${s.x}" y="0" width="${s.width}" height="10"/>`)
     .join("");
   return `
     <section class="bilan-hero">
-      <p class="bilan-hero-title">${escapeHtml(summary ? titleLabel(summary) : LOADING)}</p>
+      <p class="bilan-hero-title">${escapeHtml(titleLabel(summary))}</p>
       <div class="bilan-bar">
-        <svg viewBox="0 0 100 10" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(summary ? barAriaLabel(summary) : LOADING)}">
+        <svg viewBox="0 0 100 10" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(barAriaLabel(summary))}">
           <rect class="bilan-track" x="0" y="0" width="100" height="10"/>${segments}
         </svg>
       </div>
@@ -114,8 +108,8 @@ function tileHtml(key, count, label, detail) {
 }
 
 function tilesHtml(summary, closing) {
-  const count = (key) => (summary ? summary[key] : "–");
-  const detail = (key) => (summary ? othersDetail(summary[key]) : null);
+  const count = (key) => summary[key];
+  const detail = (key) => othersDetail(summary[key]);
   return `
     <section class="bilan-tiles">
       ${tileHtml("onTime", count("onTime"), "Faites à temps", detail("onTimeOthers"))}
@@ -133,16 +127,15 @@ function undatedHtml(count) {
 }
 
 function habitsHtml(habits, today) {
-  // Avant la réponse (2 s au plus) et hors-ligne sans cache complet : les
-  // cartes gardent leur titre, sans chiffre inventé.
-  if (!habits || habits.source === "unavailable") {
-    const message = habits ? HABITS_OFFLINE : LOADING;
+  // Hors-ligne sans cache complet : les cartes gardent leur titre, sans
+  // chiffre inventé.
+  if (habits.source === "unavailable") {
     return habitsWeek({}, today, DEFAULT_HABITS).map((habit) => `
-      <section class="bilan-habit" data-habit="${escapeHtml(habit.key)}" ${habits ? "" : 'aria-busy="true"'}>
+      <section class="bilan-habit" data-habit="${escapeHtml(habit.key)}">
         <div class="bilan-habit-head">
           <h2 class="bilan-habit-label">${escapeHtml(habit.label)}</h2>
         </div>
-        <p class="bilan-habit-off">${escapeHtml(message)}</p>
+        <p class="bilan-habit-off">${escapeHtml(HABITS_OFFLINE)}</p>
       </section>`).join("");
   }
   const cards = habitsWeek(habits.checksByDate, today, DEFAULT_HABITS).map(habitCardHtml).join("");

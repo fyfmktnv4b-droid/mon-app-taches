@@ -2,8 +2,8 @@
 // enregistré en base. Les chiffres viennent de bilanLogic.js, le rendu de
 // bilanScreen.js.
 //
-// Tâches : d'abord le cache local (l'écran s'ouvre tout de suite), puis la
-// lecture serveur de « À reprendre » (plafonnée à 2 s, cache sinon).
+// Tout est lu AVANT le dessin, qui se fait en une fois (loadBilanData).
+// Tâches : lecture serveur de « À reprendre » (plafonnée à 2 s, cache sinon).
 // Habitudes : lecture serveur de la semaine (2 s au plus). Si elle échoue,
 // le cache des routines, mais seulement s'il connaît TOUS les jours avant
 // aujourd'hui ; sinon « indisponible ».
@@ -32,6 +32,20 @@ export async function loadLocalTasks() {
 
 export function loadFreshTasks() {
   return loadTasksForReprise();
+}
+
+// Tout ce que l'écran affiche, lu en parallèle avant l'unique dessin (voir
+// openBilanScreen). En cas d'erreur : le cache des tâches, habitudes
+// « indisponibles ».
+export async function loadBilanData(today) {
+  const [tasks, habits] = await Promise.all([
+    loadFreshTasks().catch(() => loadLocalTasks()),
+    loadWeekHabits(today).catch((err) => {
+      console.error(err);
+      return { source: "unavailable" };
+    }),
+  ]);
+  return { tasks, habits };
 }
 
 async function pendingMutations() {

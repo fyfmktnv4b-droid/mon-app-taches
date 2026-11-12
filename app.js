@@ -26,7 +26,7 @@ import { openRepriseScreen, handledIdsFor, abandonedIds } from "./repriseScreen.
 import { openBilanScreen } from "./bilanScreen.js";
 import { closeFooterHtml } from "./closeFooter.js";
 import { takeOpenRequest } from "./openRequest.js";
-import { settlesWithin } from "./screenSwap.js";
+import { settlesWithin, showAfterLoading } from "./screenSwap.js";
 import { MORNING_KEYS, MORNING_LABELS, SKIP_KEY, isChecked, isMorningDone, shouldShowRoutine } from "./routineLogic.js";
 
 if ("serviceWorker" in navigator) {
@@ -75,6 +75,14 @@ const captureInput = document.getElementById("capture-input");
 const navHistory = document.getElementById("nav-history");
 const navSettings = document.getElementById("nav-settings");
 const navBilan = document.getElementById("nav-bilan");
+const screenLoading = document.getElementById("screen-loading");
+
+// Les écrans pleins : un seul visible à la fois (showOnly). L'écran de
+// démarrage (#splash) a sa propre règle (hideSplash).
+const SCREENS = [authSection, welcomeSection, routineSection, appSection, repriseSection, bilanSection, screenLoading];
+function showOnly(section) {
+  for (const screen of SCREENS) screen.hidden = screen !== section;
+}
 
 // « Fermer » (closeFooter.js) des écrans Historique et Réglages : sous la zone
 // qui défile, à la place de la barre de saisie ; et celui de « Ma routine »,
@@ -86,7 +94,12 @@ routineSection.insertAdjacentHTML("beforeend", closeFooterHtml());
 const routineFooter = routineSection.lastElementChild;
 routineFooter.hidden = true;
 
+// Écran DEMANDÉ (pas forcément encore affiché : l'écran précédent reste en
+// place pendant les lectures du suivant). Vues de #app : "main", "history",
+// "settings" ; écrans pleins : "bilan", "routine", "reprise", "welcome", "auth".
+// Chaque rendu vérifie, après ses lectures, qu'il est toujours celui demandé.
 let currentView = "main";
+const APP_VIEWS = new Set(["main", "history", "settings"]);
 let routineFromMenu = false; // « Ma routine » ouverte depuis le menu (et non au démarrage)
 let unsortedOpen = false; // bandeau « À trier » déplié ?
 // Bande de routine : un seul élément, gardé d'un rendu à l'autre. Si on le
@@ -144,11 +157,8 @@ function settleSplash() {
 
 function showWelcome() {
   hideSplash();
-  authSection.hidden = true;
-  routineSection.hidden = true;
-  appSection.hidden = true;
-  repriseSection.hidden = true;
-  bilanSection.hidden = true;
+  currentView = "welcome";
+  showOnly(null);
   authInfo.textContent = "";
   repriseOffered = false;
   // Notification touchée : le Bilan prend la place de l'accueil, sans passer
@@ -192,12 +202,8 @@ function showWelcome() {
 }
 
 async function enterApp() {
-  welcomeSection.hidden = true;
-  routineSection.hidden = true;
-  authSection.hidden = true;
-  repriseSection.hidden = true;
-  bilanSection.hidden = true;
-  appSection.hidden = false;
+  if (!APP_VIEWS.has(currentView)) currentView = "main";
+  showOnly(appSection);
   mainView.innerHTML = "";
   try {
     await flushQueue();
@@ -209,12 +215,8 @@ async function enterApp() {
 
 function showAuth() {
   hideSplash();
-  welcomeSection.hidden = true;
-  routineSection.hidden = true;
-  appSection.hidden = true;
-  repriseSection.hidden = true;
-  bilanSection.hidden = true;
-  authSection.hidden = false;
+  currentView = "auth";
+  showOnly(authSection);
   mainView.innerHTML = "";
   updateOfflineBanner();
 }
@@ -265,12 +267,8 @@ function renderRoutineChecks() {
 }
 
 function showRoutineScreen() {
-  welcomeSection.hidden = true;
-  authSection.hidden = true;
-  appSection.hidden = true;
-  repriseSection.hidden = true;
-  bilanSection.hidden = true;
-  routineSection.hidden = false;
+  currentView = "routine";
+  showOnly(routineSection);
   routineSkip.disabled = false;
   // Depuis le menu seulement : « Fermer » en bas. Au démarrage, rien ne change.
   routineFooter.hidden = !routineFromMenu;
@@ -339,12 +337,8 @@ function enterAfterRoutine() {
 }
 
 function showReprise(tasks, hier = { yesterday: null, questions: [] }) {
-  welcomeSection.hidden = true;
-  routineSection.hidden = true;
-  authSection.hidden = true;
-  appSection.hidden = true;
-  bilanSection.hidden = true;
-  repriseSection.hidden = false;
+  currentView = "reprise";
+  showOnly(repriseSection);
   openRepriseScreen(repriseSection, {
     tasks, habitQuestions: hier.questions, yesterday: hier.yesterday,
     today: todayDateString(), dateLabel: formatHeaderDate(new Date()), onExit: enterApp,
@@ -354,14 +348,33 @@ function showReprise(tasks, hier = { yesterday: null, questions: [] }) {
 // Bilan de la semaine : plein écran, en lecture seule, recalculé à chaque
 // ouverture. « Fermer » ramène à « Aujourd'hui », d'où qu'il ait été ouvert
 // (menu de n'importe quel écran, notification).
-function showBilan() {
-  welcomeSection.hidden = true;
-  routineSection.hidden = true;
-  authSection.hidden = true;
-  appSection.hidden = true;
-  repriseSection.hidden = true;
-  bilanSection.hidden = false;
-  openBilanScreen(bilanSection, { excludedIds: abandonedIds, onClose: closeToToday });
+// En un coup : l'écran affiché reste en place pendant les lectures, puis le
+// Bilan complet le remplace dans la même image. `loading: false` : simple
+// rafraîchissement (retour au premier plan), jamais de « Chargement… ».
+function showBilan({ loading = true } = {}) {
+  currentView = "bilan";
+  return swapScreen(() => openBilanScreen(bilanSection, {
+    excludedIds: abandonedIds,
+    onClose: closeToToday,
+    isWanted: () => currentView === "bilan",
+    reveal: () => showOnly(bilanSection),
+  }), { view: "bilan", section: bilanSection, loading });
+}
+
+// Changement d'écran en un coup (screenSwap.js) : `work` lit puis dessine
+// l'écran `view` (montré par `section`) s'il est toujours demandé. Au-delà de
+// 300 ms, « Chargement… » (tout de suite si aucun écran n'est affiché).
+// Seulement pour un changement d'écran (`loading`), jamais pour un redessin
+// (case validée, synchronisation, retour au premier plan).
+function swapScreen(work, { view, section, loading = true }) {
+  if (!loading) return work();
+  return showAfterLoading(work, {
+    wanted: () => currentView === view,
+    showLoading: () => showOnly(screenLoading),
+    stillLoading: () => !screenLoading.hidden,
+    giveUp: () => showOnly(section),
+    immediately: SCREENS.every((screen) => screen.hidden),
+  });
 }
 
 // Relève la boîte aux lettres (openRequest.js). Au chargement ou sur l'écran de
@@ -924,6 +937,7 @@ async function renderSettingsView() {
 // ou un écran ouvert juste avant « Fermer ») finirait après le suivant et le
 // remplacerait (« Fermer » mènerait alors aux Réglages au lieu d'Aujourd'hui).
 async function render() {
+  if (!APP_VIEWS.has(currentView)) return; // un écran plein est demandé (Bilan, Ma routine…)
   try {
     if (currentView === "main") await renderMainView();
     else if (currentView === "history") await renderHistoryView();
@@ -1062,7 +1076,8 @@ document.addEventListener("visibilitychange", async () => {
   if (await honorOpenRequest()) return; // notification touchée, app en arrière-plan
   if (!appSection.hidden) render();
   // Bilan resté ouvert : nouveau jour, dimanche 20:00, données d'un autre appareil.
-  else if (!bilanSection.hidden) showBilan();
+  // Simple rafraîchissement : il reste affiché jusqu'au nouveau dessin.
+  else if (!bilanSection.hidden) showBilan({ loading: false });
 });
 
 // Notification touchée alors que l'app est déjà à l'écran : aucun retour au
@@ -1078,7 +1093,7 @@ function showView(view) {
 
 navHistory.addEventListener("click", () => showView("history"));
 navSettings.addEventListener("click", () => showView("settings"));
-navBilan.addEventListener("click", showBilan);
+navBilan.addEventListener("click", () => showBilan());
 viewFooter.addEventListener("click", (event) => {
   if (event.target.closest("[data-close]")) closeToToday();
 });

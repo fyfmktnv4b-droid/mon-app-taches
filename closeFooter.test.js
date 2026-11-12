@@ -44,7 +44,7 @@ test("« Fermer » mène toujours à Aujourd'hui", () => {
   assert.match(close, /currentView = "main";/);
   assert.match(close, /routineFromMenu = false;/);
   // Le Bilan (menu ou notification) ne revient plus à l'écran précédent.
-  assert.match(app, /openBilanScreen\(bilanSection, \{ excludedIds: abandonedIds, onClose: closeToToday \}\)/);
+  assert.match(app, /openBilanScreen\(bilanSection, \{\s*excludedIds: abandonedIds,\s*onClose: closeToToday,/);
   // Les deux « Fermer » de app.js vont au même endroit.
   assert.equal(app.match(/closest\("\[data-close\]"\)\) closeToToday\(\);/g).length, 2);
 });
