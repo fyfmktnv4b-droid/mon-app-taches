@@ -75,3 +75,17 @@ test("le vidage reste garanti à la déconnexion et au changement de compte", ()
   assert.match(fn("showAuth"), /forgetShownData\(\);/);
   assert.match(fn("handleAuthEvent"), /if \(out\.clear\) \{\s*forgetShownData\(\);\s*try \{\s*await clearLocalData\(\);/);
 });
+
+test("menu : les 4 entrées qui changent d'écran passent par menuSwap.run, et la fonction renvoie la promesse", () => {
+  // Le comportement réel (menu ouvert jusqu'à l'arrivée) est vérifié au banc (scenarios/menu.js).
+  assert.match(app, /navHistory\.addEventListener\("click", \(\) => menuSwap\.run\(\(\) => showView\("history"\)\)\);/);
+  assert.match(app, /navSettings\.addEventListener\("click", \(\) => menuSwap\.run\(\(\) => showView\("settings"\)\)\);/);
+  assert.match(app, /navBilan\.addEventListener\("click", \(\) => menuSwap\.run\(\(\) => showBilan\(\)\)\);/);
+  assert.match(app, /openRoutine\.addEventListener\("click", \(\) => menuSwap\.run\(async \(\) => \{/);
+  // Ces fonctions renvoient la promesse du changement d'écran (sinon le menu se fermerait tout de suite).
+  assert.match(fn("showView"), /return render\(\{ loading: true \}\);/);
+  assert.match(fn("showBilan"), /return swapScreen\(/);
+  assert.match(app, /await swapScreen\(async \(\) => \{\s*let checks;/);
+  // Le panneau ne ferme pas ces 4 entrées au toucher.
+  assert.match(app, /new Set\(\[navBilan, navHistory, navSettings, openRoutine\]\)/);
+});
