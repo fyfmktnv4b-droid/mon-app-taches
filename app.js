@@ -26,6 +26,7 @@ import { openRepriseScreen, handledIdsFor, abandonedIds } from "./repriseScreen.
 import { openBilanScreen } from "./bilanScreen.js";
 import { closeFooterHtml } from "./closeFooter.js";
 import { takeOpenRequest } from "./openRequest.js";
+import { settlesWithin } from "./screenSwap.js";
 import { MORNING_KEYS, MORNING_LABELS, SKIP_KEY, isChecked, isMorningDone, shouldShowRoutine } from "./routineLogic.js";
 
 if ("serviceWorker" in navigator) {
@@ -1113,15 +1114,6 @@ const signOutText = document.getElementById("signout-text");
 const signOutOk = document.getElementById("signout-ok");
 const signOutAnyway = document.getElementById("signout-anyway");
 let signingOut = false;
-
-// Vrai si la promesse s'est terminée (réussie ou non) avant le délai ; sinon
-// elle continue en arrière-plan, on cesse simplement de l'attendre.
-function settlesWithin(promise, ms) {
-  return Promise.race([
-    promise.then(() => true, () => true),
-    new Promise((resolve) => setTimeout(() => resolve(false), ms)),
-  ]);
-}
 
 async function pendingCount() {
   try {
