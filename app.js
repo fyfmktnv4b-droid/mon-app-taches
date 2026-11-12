@@ -15,7 +15,7 @@ import {
 import { subscribeToPush, unsubscribeFromPush, hasPushSubscription } from "./push.js";
 import { pickQuoteForDate } from "./quotes.js";
 import { sceneForDay } from "./dayScenes.js";
-import { mountRoutineBlock } from "./routineBlock.js";
+import { readRoutineBlock, mountRoutineBlock } from "./routineBlock.js";
 import { localDateString, reminderTimeProblem, defaultReminderTime, noReminderTimeLeft, REMINDER_NO_TIME_LEFT_MESSAGE } from "./localDate.js";
 import { splashScreen, splashWakeInMs } from "./splashLogic.js";
 import { APP_VERSION } from "./version.js";
@@ -26,7 +26,7 @@ import { openRepriseScreen, handledIdsFor, abandonedIds } from "./repriseScreen.
 import { openBilanScreen } from "./bilanScreen.js";
 import { closeFooterHtml } from "./closeFooter.js";
 import { takeOpenRequest } from "./openRequest.js";
-import { settlesWithin, showAfterLoading } from "./screenSwap.js";
+import { settlesWithin, showAfterLoading, FLUSH_WAIT_MS } from "./screenSwap.js";
 import { MORNING_KEYS, MORNING_LABELS, SKIP_KEY, isChecked, isMorningDone, shouldShowRoutine } from "./routineLogic.js";
 
 if ("serviceWorker" in navigator) {
@@ -201,24 +201,40 @@ function showWelcome() {
   welcomeScene.src = scene.file;
 }
 
-async function enterApp() {
+// Entrée dans l'app (après l'accueil, la routine, « À reprendre », ou
+// « Fermer » d'un écran plein). En un coup : l'écran affiché reste en place
+// jusqu'à ce que « Aujourd'hui » soit prêt (« Chargement… » au-delà de 300 ms).
+// L'écran n'est plus vidé ici : il l'est à la déconnexion et au changement de
+// compte (forgetShownData). L'envoi de la file est attendu 2 s au plus : on
+// cesse d'attendre, il continue en arrière-plan, jamais annulé ni relancé
+// (flushQueue partage l'envoi en cours). Hors-ligne, render() prend le cache.
+function enterApp() {
   if (!APP_VIEWS.has(currentView)) currentView = "main";
-  showOnly(appSection);
-  mainView.innerHTML = "";
-  try {
-    await flushQueue();
-  } catch (_err) {
-    // Still offline (or a real error) — render() falls back to cache as needed.
-  }
-  render();
+  return render({ loading: true, before: () => settlesWithin(flushQueue(), FLUSH_WAIT_MS) });
 }
 
 function showAuth() {
   hideSplash();
   currentView = "auth";
   showOnly(authSection);
-  mainView.innerHTML = "";
+  forgetShownData();
   updateOfflineBanner();
+}
+
+// Rien d'un compte ne reste dans la page pour le suivant, même caché : appelé
+// à l'écran de connexion (déconnexion, session perdue) et quand les données
+// locales d'un autre compte sont effacées. Indispensable depuis la v44 :
+// enterApp ne vide plus l'écran, l'ancien contenu reste en place jusqu'au
+// nouveau dessin.
+function forgetShownData() {
+  mainView.innerHTML = "";
+  delete mainView.dataset.view;
+  routineHost.innerHTML = "";
+  bilanSection.innerHTML = "";
+  repriseSection.innerHTML = "";
+  shownTasks = new Map();
+  draftDone.clear();
+  openRows.clear();
 }
 
 // Bandeau « Mode hors-ligne » : visible sur tous les écrans de l'app tant que
@@ -629,7 +645,11 @@ function formatHeaderDate(date) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+// Appelée par chaque vue au moment de son dessin (après ses lectures et sa
+// garde « toujours demandée ? ») : titre, contenu et apparition de #app dans
+// la même image.
 function setHeader(title) {
+  showOnly(appSection);
   headerDate.textContent = formatHeaderDate(new Date());
   headerTitle.textContent = title;
   captureForm.hidden = currentView !== "main";
@@ -642,12 +662,14 @@ function setHeader(title) {
 function closeToToday() {
   routineFromMenu = false;
   currentView = "main";
-  if (!appSection.hidden) return render();
+  if (!appSection.hidden) return render({ loading: true });
   return enterApp();
 }
 
 async function renderMainView() {
-  const allTasks = await loadTasks();
+  // La routine du matin est lue en même temps que les tâches et dessinée avec
+  // elles : jamais d'« Aujourd'hui » sans sa routine, puis un saut.
+  const [allTasks, routineData] = await Promise.all([loadTasks(), readRoutineBlock()]);
   if (currentView !== "main") return; // un autre écran a été demandé entre-temps (voir render)
   shownTasks = new Map(allTasks.map((t) => [t.id, t]));
   const today = todayDateString();
@@ -752,8 +774,7 @@ async function renderMainView() {
   wireTaskRows(mainView);
   mainView.querySelector(".reprise-banner")?.addEventListener("click", () => showReprise(waiting));
   mainView.querySelector("#routine-slot").replaceWith(routineHost);
-  // Le contenu précédent reste affiché jusqu'à ce que le nouveau soit prêt.
-  mountRoutineBlock(routineHost);
+  mountRoutineBlock(routineHost, routineData);
 
   const unsortedList = mainView.querySelector(".unsorted-list");
   if (unsortedList) {
@@ -936,12 +957,20 @@ async function renderSettingsView() {
 // sinon un rendu lent (relancé par la synchronisation au retour du réseau,
 // ou un écran ouvert juste avant « Fermer ») finirait après le suivant et le
 // remplacerait (« Fermer » mènerait alors aux Réglages au lieu d'Aujourd'hui).
-async function render() {
+// `loading` : changement d'écran (menu, « Fermer », entrée dans l'app), avec
+// « Chargement… » au-delà de 300 ms. Sans : simple redessin (case validée,
+// synchronisation, retour au premier plan), jamais de « Chargement… ».
+// `before` : à attendre avant les lectures (enterApp).
+async function render({ loading = false, before = null } = {}) {
   if (!APP_VIEWS.has(currentView)) return; // un écran plein est demandé (Bilan, Ma routine…)
+  const view = currentView;
   try {
-    if (currentView === "main") await renderMainView();
-    else if (currentView === "history") await renderHistoryView();
-    else await renderSettingsView();
+    await swapScreen(async () => {
+      if (before) await before();
+      if (view === "main") await renderMainView();
+      else if (view === "history") await renderHistoryView();
+      else await renderSettingsView();
+    }, { view, section: appSection, loading });
     clearAppError();
   } catch (err) {
     showAppError(err);
@@ -971,16 +1000,25 @@ routineFooter.addEventListener("click", (event) => {
 
 // Manual reopen from the task screen: always shows the routine, even if it
 // was completed or skipped today, so a box can still be checked later.
+// En un coup : l'écran affiché reste en place pendant la lecture
+// (« Chargement… » au-delà de 300 ms), puis Ma routine apparaît complète.
 openRoutine.addEventListener("click", async () => {
   routineFromMenu = true;
-  routineLocalDate = localDateString();
-  try {
-    routineState = (await loadRoutine(routineLocalDate)).checks ?? {};
-  } catch (err) {
-    console.error(err);
-    routineState = {};
-  }
-  showRoutineScreen();
+  currentView = "routine";
+  const localDate = localDateString();
+  await swapScreen(async () => {
+    let checks;
+    try {
+      checks = (await loadRoutine(localDate)).checks ?? {};
+    } catch (err) {
+      console.error(err);
+      checks = {};
+    }
+    if (currentView !== "routine") return; // un autre écran a été demandé entre-temps
+    routineLocalDate = localDate;
+    routineState = checks;
+    showRoutineScreen();
+  }, { view: "routine", section: routineSection });
 });
 
 routineSkip.addEventListener("click", () => {
@@ -1088,7 +1126,7 @@ navigator.serviceWorker?.addEventListener("message", (event) => {
 
 function showView(view) {
   currentView = view;
-  render();
+  render({ loading: true });
 }
 
 navHistory.addEventListener("click", () => showView("history"));
@@ -1314,6 +1352,7 @@ async function handleAuthEvent(session, event) {
   if (out.clear) {
     // Attendu AVANT d'ouvrir la porte ou d'afficher quoi que ce soit : les
     // données d'un autre compte ne doivent jamais apparaître ni être rejouées.
+    forgetShownData();
     try {
       await clearLocalData();
     } catch (err) {

@@ -3,31 +3,38 @@ import { localDateString } from "./localDate.js";
 import { MORNING_KEYS, countMorningDone, isChecked, plannedSession } from "./routineLogic.js";
 
 // Bloc autonome de l'écran des tâches : « Séance de salle » et « 10 000 pas ».
-// Il lit et écrit lui-même la routine du jour ; l'appelant ne lui donne que
-// l'élément où s'afficher. Une erreur ici ne doit jamais gêner la liste des
-// tâches : en cas d'échec de lecture, le bloc reste simplement vide.
+// Il lit (readRoutineBlock) et écrit lui-même la routine du jour. v44 : la
+// lecture se fait AVANT le dessin de l'écran, en même temps que celle des
+// tâches, et mountRoutineBlock dessine aussitôt (sans attente) : l'écran
+// apparaît en un coup, routine comprise. Une erreur ici ne doit jamais gêner
+// la liste des tâches : en cas d'échec de lecture, le bloc reste tel quel.
 // Cases « en attente » (cochées mais pas encore validées). Au niveau du module
 // pour survivre aux re-rendus de l'écran ; volontairement jamais écrites en
 // base : seule la validation écrit, via la même fonction que l'écran de routine.
 const pendingKeys = new Set();
 let pendingDate = null;
 
-export async function mountRoutineBlock(container) {
+// Routine du jour, ou null si la lecture échoue (loadRoutine a déjà ses replis :
+// 2 s au plus, puis le cache).
+export async function readRoutineBlock() {
   const localDate = localDateString();
+  try {
+    return { localDate, checks: (await loadRoutine(localDate)).checks ?? {} };
+  } catch (err) {
+    console.error(err);
+    return null;
+  }
+}
+
+// Dessine le bloc tout de suite, d'après `data` (readRoutineBlock).
+export function mountRoutineBlock(container, data) {
+  if (!data) return;
+  const { localDate } = data;
   if (pendingDate !== localDate) {
     pendingKeys.clear();
     pendingDate = localDate;
   }
-  let checks;
-  try {
-    checks = (await loadRoutine(localDate)).checks ?? {};
-  } catch (err) {
-    console.error(err);
-    return;
-  }
-  // L'écran a pu être re-rendu pendant la lecture : on n'écrit pas dans un
-  // élément détaché.
-  if (!container.isConnected) return;
+  let checks = data.checks;
 
   const session = plannedSession(localDate);
 
