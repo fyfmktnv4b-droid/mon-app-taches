@@ -6,6 +6,8 @@ Fait tourner une **copie** de l'app dans un Chrome sans fenêtre, face à un **f
 node scripts/bench/bench.js
 ```
 
+Pour un seul scénario : `BENCH_ONLY=<nom>` (partie du nom de fichier), par exemple `BENCH_ONLY=enUnCoup node scripts/bench/bench.js`.
+
 ## Ce que prouve le contrôle d'isolation
 
 À chaque lancement, avant tout scénario (sinon le banc s'arrête) :
@@ -35,9 +37,11 @@ Avec `BENCH_CAPTURE_DIR=<dossier>` (et `BENCH_CAPTURE_LABEL=avant` ou `apres`), 
 
 `scenarios/fermer.js` vérifie le bouton « Fermer » de chaque écran du menu (Bilan, Historique, Réglages, aussi hors-ligne, Ma routine ouverte depuis le menu) : un seul par écran, plus de lien « ‹ Aujourd'hui », le même bouton partout (bas d'écran, pleine largeur, style crème, au moins 44 px à 320, 375 et 390 px, Ma routine aussi à 320 × 568). « Fermer » mène toujours à « Aujourd'hui » : depuis chaque écran, Réglages ou Historique → menu → Bilan, Bilan ouvert par une notification pendant les Réglages. Ma routine ouverte depuis les Réglages : « Passer pour aujourd'hui » et « Continuer » mènent aussi à « Aujourd'hui ». La routine du démarrage n'a pas de « Fermer ». Avec `BENCH_CAPTURE_DIR`, il écrit `fermer-<écran>-<largeur>.png`.
 
+`scenarios/enUnCoup.js` (v44) vérifie, **image par image**, que chaque écran apparaît en un coup : Aujourd'hui ↔ Historique, Réglages, Bilan et Ma routine (menu, puis « Fermer »), réseau rapide puis lent (`fake.setDelay(1000)` : 1 s par requête). Une boucle `requestAnimationFrame` note ce qui est affiché à chaque image ; `frames.js` (testé sans Chrome par `frames.test.js`) refuse tout ce qui n'est ni l'écran de départ complet, ni l'écran d'arrivée complet, ni l'état « Chargement… » : titre seul, page vide, Aujourd'hui sans sa routine, Bilan avec « Chargement… », et tout saut de page une fois l'écran complet. Réseau lent : « Chargement… » une seule fois, vers 300 ms ; réseau rapide : jamais. Il vérifie aussi que les rendus qui ne changent pas d'écran (« Validé ? », synchronisation, retour au premier plan sur Aujourd'hui et sur le Bilan) n'affichent jamais « Chargement… », et qu'après la déconnexion d'un compte A puis la connexion d'un compte B, aucune tâche de A n'est visible, même un instant (relevé à chaque modification du DOM), ni présente dans la page. Le journal donne le temps de chaque changement d'écran. Avec `BENCH_CAPTURE_DIR`, il écrit `chargement-390.png`, `bilan-complet-390.png` et `aujourdhui-routine-390.png` (390 × 844).
+
 ## Ajouter un scénario
 
-Un fichier `scenarios/<nom>.js` qui exporte `name` et `async run({ page, fake, appOrigin, log })`. Il lève une erreur s'il échoue. `page` fournit `goto`, `evaluate`, `waitFor`, `tapSelector`, `swipe`, `typeText`, `setOffline` ; `fake` donne les modes de panne (`setMode("online" | "hang" | "down" | "refuse400")`), la base (`fake.db`) et `seedUser`.
+Un fichier `scenarios/<nom>.js` qui exporte `name` et `async run({ page, fake, appOrigin, log })`. Il lève une erreur s'il échoue. `page` fournit `goto`, `evaluate`, `waitFor`, `tapSelector`, `swipe`, `typeText`, `setOffline` ; `fake` donne les modes de panne (`setMode("online" | "hang" | "down" | "refuse400")`), un réseau lent (`setDelay(ms)`), la base (`fake.db`) et `seedUser`.
 
 ## Tests
 

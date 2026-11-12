@@ -55,7 +55,9 @@ async function main() {
     if (!report.ok) throw new IsolationError(report);
 
     const dir = fileURLToPath(new URL("./scenarios/", import.meta.url));
-    for (const file of (await readdir(dir)).filter((f) => f.endsWith(".js")).sort()) {
+    // BENCH_ONLY=<nom> : seulement les scénarios dont le fichier contient ce nom.
+    const only = process.env.BENCH_ONLY;
+    for (const file of (await readdir(dir)).filter((f) => f.endsWith(".js") && (!only || f.includes(only))).sort()) {
       const scenario = await import(pathToFileURL(dir + file));
       console.log(`\nScénario : ${scenario.name}`);
       try {

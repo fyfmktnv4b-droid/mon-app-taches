@@ -38,6 +38,7 @@ export async function startServers() {
   const refreshTokens = new Map();  // jeton de renouvellement -> id utilisateur
   const sockets = new Set();
   let mode = "online";
+  let delayMs = 0; // réseau lent simulé : attente avant chaque réponse du faux Supabase
   let appDir = null;
   const ports = {};
 
@@ -295,6 +296,7 @@ export async function startServers() {
     if (mode === "hang") return;
     res.cors = cors;
     if (req.method === "OPTIONS") return reply(res, 204, "");
+    if (delayMs > 0) await new Promise((ok) => setTimeout(ok, delayMs));
 
     record("api", req, "ok");
     const body = await readBody(req);
@@ -334,6 +336,8 @@ export async function startServers() {
     get mode() { return mode; },
     // "online" | "hang" (aucune réponse) | "down" (connexion coupée) | "refuse400" (renouvellement refusé)
     setMode(next) { mode = next; },
+    // Réseau lent : chaque requête (hors pré-vérification CORS) attend `ms` avant sa réponse.
+    setDelay(ms) { delayMs = ms; },
     setAppDir(dir) { appDir = resolve(dir); },
     seedUser({ email, password }) { return createUser(email, password); },
     // Le contrôle d'isolation déclare ses sondes : leurs échecs voulus ne sont pas comptés comme fuites.
