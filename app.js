@@ -1099,8 +1099,10 @@ function setMenuOpen(open) {
 }
 
 // Un écran touché depuis le menu : le menu reste ouvert jusqu'à son arrivée
-// (screenSwap.js, createMenuSwap) ; voile, bouton du menu, Échap et seconde
-// entrée sont ignorés pendant l'attente.
+// (screenSwap.js, createMenuSwap). Pendant l'attente, voile, bouton du menu,
+// Échap et seconde entrée de changement d'écran sont ignorés ; « Sauvegarder
+// mes tâches » et « Se déconnecter » ne ferment pas le menu (il se ferme à
+// l'arrivée) mais leur action part quand même.
 const menuSwap = createMenuSwap(() => setMenuOpen(false));
 const MENU_SWAP_BUTTONS = new Set([navBilan, navHistory, navSettings, openRoutine]);
 
