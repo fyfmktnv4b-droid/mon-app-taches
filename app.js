@@ -26,7 +26,7 @@ import { openRepriseScreen, handledIdsFor, abandonedIds } from "./repriseScreen.
 import { openBilanScreen } from "./bilanScreen.js";
 import { closeFooterHtml } from "./closeFooter.js";
 import { takeOpenRequest } from "./openRequest.js";
-import { settlesWithin, showAfterLoading, FLUSH_WAIT_MS } from "./screenSwap.js";
+import { settlesWithin, showAfterLoading, createMenuSwap, FLUSH_WAIT_MS } from "./screenSwap.js";
 import { MORNING_KEYS, MORNING_LABELS, SKIP_KEY, isChecked, isMorningDone, shouldShowRoutine } from "./routineLogic.js";
 
 if ("serviceWorker" in navigator) {
@@ -1002,7 +1002,9 @@ routineFooter.addEventListener("click", (event) => {
 // was completed or skipped today, so a box can still be checked later.
 // En un coup : l'écran affiché reste en place pendant la lecture
 // (« Chargement… » au-delà de 300 ms), puis Ma routine apparaît complète.
-openRoutine.addEventListener("click", async () => {
+// Tout l'état (routineFromMenu, currentView) est posé DANS menuSwap.run : un
+// geste ignoré pendant l'attente d'un autre écran ne modifie rien.
+openRoutine.addEventListener("click", () => menuSwap.run(async () => {
   routineFromMenu = true;
   currentView = "routine";
   const localDate = localDateString();
@@ -1019,7 +1021,7 @@ openRoutine.addEventListener("click", async () => {
     routineState = checks;
     showRoutineScreen();
   }, { view: "routine", section: routineSection });
-});
+}));
 
 routineSkip.addEventListener("click", () => {
   // A skip is just one more key in the same jsonb row (SKIP_KEY = "skipped").
@@ -1096,14 +1098,26 @@ function setMenuOpen(open) {
   menuToggle.setAttribute("aria-expanded", String(open));
 }
 
-menuToggle.addEventListener("click", () => setMenuOpen(menuPanel.hidden));
-menuScrim.addEventListener("click", () => setMenuOpen(false));
+// Un écran touché depuis le menu : le menu reste ouvert jusqu'à son arrivée
+// (screenSwap.js, createMenuSwap) ; voile, bouton du menu, Échap et seconde
+// entrée sont ignorés pendant l'attente.
+const menuSwap = createMenuSwap(() => setMenuOpen(false));
+const MENU_SWAP_BUTTONS = new Set([navBilan, navHistory, navSettings, openRoutine]);
+
+menuToggle.addEventListener("click", () => { if (!menuSwap.pending) setMenuOpen(menuPanel.hidden); });
+menuScrim.addEventListener("click", () => { if (!menuSwap.pending) setMenuOpen(false); });
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") { setMenuOpen(false); closeReminderSheet(); closeTaskMenu(); closeSignOutSheet(); }
+  if (event.key === "Escape") {
+    if (!menuSwap.pending) setMenuOpen(false);
+    closeReminderSheet(); closeTaskMenu(); closeSignOutSheet();
+  }
 });
-// Toute action du menu le referme (la déconnexion / sauvegarde gardent leur handler).
+// Les entrées qui changent d'écran ferment le menu à l'arrivée (menuSwap) ;
+// toute autre action le referme tout de suite (la déconnexion / sauvegarde
+// gardent leur handler).
 menuPanel.addEventListener("click", (event) => {
-  if (event.target.closest("button")) setMenuOpen(false);
+  const button = event.target.closest("button");
+  if (button && !MENU_SWAP_BUTTONS.has(button) && !menuSwap.pending) setMenuOpen(false);
 });
 
 // Une app restée ouverte passé minuit ne se met pas à jour toute seule : on
@@ -1126,12 +1140,12 @@ navigator.serviceWorker?.addEventListener("message", (event) => {
 
 function showView(view) {
   currentView = view;
-  render({ loading: true });
+  return render({ loading: true });
 }
 
-navHistory.addEventListener("click", () => showView("history"));
-navSettings.addEventListener("click", () => showView("settings"));
-navBilan.addEventListener("click", () => showBilan());
+navHistory.addEventListener("click", () => menuSwap.run(() => showView("history")));
+navSettings.addEventListener("click", () => menuSwap.run(() => showView("settings")));
+navBilan.addEventListener("click", () => menuSwap.run(() => showBilan()));
 viewFooter.addEventListener("click", (event) => {
   if (event.target.closest("[data-close]")) closeToToday();
 });

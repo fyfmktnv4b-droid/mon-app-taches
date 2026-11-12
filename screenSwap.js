@@ -48,3 +48,23 @@ export async function showAfterLoading(work, {
     if (shown && wanted() && stillLoading()) giveUp();
   }
 }
+
+// Changement d'écran touché depuis le menu : le menu reste ouvert jusqu'à la
+// fin du changement (écran dessiné, ou lecture en échec), puis se ferme dans la
+// même image. Un seul choix à la fois : tout geste pendant l'attente est ignoré.
+export function createMenuSwap(closeMenu) {
+  let pending = false;
+  return {
+    get pending() { return pending; },
+    async run(start) {          // start() renvoie la promesse du changement d'écran
+      if (pending) return;      // un choix est déjà en cours : ignoré
+      pending = true;
+      try {
+        await start();
+      } finally {
+        pending = false;
+        closeMenu();            // toujours, même si la lecture a échoué
+      }
+    },
+  };
+}

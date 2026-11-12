@@ -8,8 +8,8 @@
 //      et 1000 ms (« Chargement… » vers 300 ms, menu compris).
 //   2. L'entrée de l'écran où l'on est déjà (Historique depuis Historique,
 //      Réglages depuis Réglages) : le menu se ferme quand même.
-//   3. Pendant l'attente : voile, bouton du menu, Échap et seconde entrée sont
-//      IGNORÉS (le menu reste ouvert, l'écran choisi arrive) ; sous le doigt,
+//   3. Pendant l'attente : voile, bouton du menu, Échap et seconde entrée (« Réglages »,
+//      « Ma routine ») sont IGNORÉS (le menu reste ouvert, l'écran choisi arrive) ; sous le doigt,
 //      le menu ou son voile, jamais une ligne de l'écran de dessous.
 //   4. Un autre écran prend la place pendant l'attente (demande d'ouverture
 //      d'une notification ; « Fermer » vers Aujourd'hui) : le menu se ferme, ne
@@ -204,6 +204,7 @@ export async function run({ page, fake, appOrigin, log }) {
       document.getElementById("menu-toggle").click();
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       document.getElementById("nav-settings").click();
+      document.getElementById("open-routine").click(); // ignoré : l'écran demandé reste Historique
       await new Promise((ok) => setTimeout(ok, 50));
       return { ...before, stillOpen: !document.getElementById("menu-panel").hidden };
     })()`);

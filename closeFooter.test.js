@@ -54,7 +54,7 @@ test("Ma routine : « Fermer », Continuer et Passer mènent à Aujourd'hui depu
   assert.match(app, /const leaveRoutine = \(\) => \(routineFromMenu \? closeToToday\(\) : enterAfterRoutine\(\)\);/);
   assert.match(app, /routineContinue\.addEventListener\("click", leaveRoutine\);/);
   assert.match(app, /toggleRoutineCheck\(routineLocalDate, SKIP_KEY, true\)\.catch\(console\.error\);\s*leaveRoutine\(\);/);
-  assert.match(app, /openRoutine\.addEventListener\("click", async \(\) => \{\s*routineFromMenu = true;/);
+  assert.match(app, /openRoutine\.addEventListener\("click", \(\) => menuSwap\.run\(async \(\) => \{\s*routineFromMenu = true;/);
   assert.match(app, /async function maybeShowRoutine\(\) \{\s*routineFromMenu = false;/);
   assert.match(app, /routineFooter\.hidden = !routineFromMenu;/);
 });

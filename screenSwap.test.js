@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { showAfterLoading, settlesWithin, LOADING_DELAY_MS, FLUSH_WAIT_MS } from "./screenSwap.js";
+import { showAfterLoading, settlesWithin, createMenuSwap, LOADING_DELAY_MS, FLUSH_WAIT_MS } from "./screenSwap.js";
 
 // Minuteurs factices : le temps n'avance que quand le test le dit.
 function fakeTimers() {
@@ -108,4 +108,52 @@ test("settlesWithin : vrai si terminé à temps (même en erreur), faux sinon, s
   release();
   await slow;
   assert.equal(finished, true, "la promesse a continué après le délai");
+});
+
+// Menu : fermé À LA FIN du changement d'écran, jamais avant ; un geste pendant l'attente est ignoré.
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((ok, ko) => { resolve = ok; reject = ko; });
+  return { promise, resolve, reject };
+}
+const tick = () => new Promise((ok) => setImmediate(ok));
+
+test("menu : reste ouvert pendant le changement d'écran, se ferme juste après", async () => {
+  const log = [];
+  const menu = createMenuSwap(() => log.push("menu fermé"));
+  const work = deferred();
+  const running = menu.run(() => { log.push("écran demandé"); return work.promise.then(() => log.push("écran dessiné")); });
+  await tick();
+  assert.deepEqual(log, ["écran demandé"]);
+  assert.equal(menu.pending, true);
+  work.resolve();
+  await running;
+  assert.deepEqual(log, ["écran demandé", "écran dessiné", "menu fermé"]);
+  assert.equal(menu.pending, false);
+});
+
+test("menu : fermé aussi quand la lecture échoue, et plus jamais bloqué", async () => {
+  let closed = 0;
+  const menu = createMenuSwap(() => { closed++; });
+  await assert.rejects(menu.run(() => Promise.reject(new Error("lecture en échec"))), /lecture en échec/);
+  assert.equal(closed, 1);
+  assert.equal(menu.pending, false);
+  await menu.run(async () => {});
+  assert.equal(closed, 2);
+});
+
+test("menu : un second choix pendant l'attente est ignoré (rien lancé, rien modifié)", async () => {
+  let started = 0;
+  let closed = 0;
+  const menu = createMenuSwap(() => { closed++; });
+  const work = deferred();
+  const first = menu.run(() => { started++; return work.promise; });
+  await menu.run(() => { started++; return Promise.resolve(); });
+  assert.equal(started, 1, "le second choix n'a même pas démarré");
+  assert.equal(closed, 0, "et il n'a pas fermé le menu");
+  work.resolve();
+  await first;
+  assert.equal(closed, 1);
+  await menu.run(() => { started++; return Promise.resolve(); });
+  assert.equal(started, 2, "un nouveau choix est possible après l'arrivée");
 });
